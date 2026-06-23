@@ -1,10 +1,13 @@
 import type { SiteSettings } from "./types";
 
+const forceMaintenance =
+  process.env.NEXT_PUBLIC_FORCE_MAINTENANCE === "true" || process.env.FORCE_MAINTENANCE === "true";
+
 export const defaultSettings: SiteSettings = {
   businessName: "Fonocopete MAVERIK",
-  maintenanceMode: false,
+  maintenanceMode: forceMaintenance,
   maintenanceMessage:
-    "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Inténtalo nuevamente más tarde.",
+    "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Intentalo nuevamente mas tarde.",
   whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56912345678",
   mercadoPagoLink: process.env.NEXT_PUBLIC_MERCADOPAGO_LINK || "https://www.mercadopago.cl/",
   bankDetails: {

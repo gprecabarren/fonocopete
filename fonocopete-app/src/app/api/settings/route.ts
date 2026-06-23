@@ -7,6 +7,16 @@ import type { SiteSettings } from "@/lib/types";
 
 let demoSettings: SiteSettings = defaultSettings;
 
+function withRuntimeOverrides(settings: SiteSettings) {
+  return {
+    ...settings,
+    maintenanceMode:
+      process.env.FORCE_MAINTENANCE === "true" ||
+      process.env.NEXT_PUBLIC_FORCE_MAINTENANCE === "true" ||
+      settings.maintenanceMode,
+  };
+}
+
 const settingsSchema = z.object({
   businessName: z.string().min(1),
   maintenanceMode: z.boolean(),
@@ -25,12 +35,12 @@ const settingsSchema = z.object({
 
 export async function GET() {
   const supabase = createServerSupabaseClient();
-  if (!supabase) return NextResponse.json({ settings: demoSettings, source: "demo" });
+  if (!supabase) return NextResponse.json({ settings: withRuntimeOverrides(demoSettings), source: "demo" });
 
   const { data, error } = await supabase.from("site_settings").select("value").eq("key", "main").single();
-  if (error || !data?.value) return NextResponse.json({ settings: defaultSettings, source: "supabase" });
+  if (error || !data?.value) return NextResponse.json({ settings: withRuntimeOverrides(defaultSettings), source: "supabase" });
 
-  return NextResponse.json({ settings: { ...defaultSettings, ...data.value }, source: "supabase" });
+  return NextResponse.json({ settings: withRuntimeOverrides({ ...defaultSettings, ...data.value }), source: "supabase" });
 }
 
 export async function PATCH(request: Request) {
@@ -42,7 +52,7 @@ export async function PATCH(request: Request) {
   const supabase = createServerSupabaseClient();
   if (!supabase) {
     demoSettings = parsed.data;
-    return NextResponse.json({ settings: demoSettings, source: "demo" });
+    return NextResponse.json({ settings: withRuntimeOverrides(demoSettings), source: "demo" });
   }
 
   const { error } = await supabase
@@ -51,5 +61,5 @@ export async function PATCH(request: Request) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ settings: parsed.data, source: "supabase" });
+  return NextResponse.json({ settings: withRuntimeOverrides(parsed.data), source: "supabase" });
 }
