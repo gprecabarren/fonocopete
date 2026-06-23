@@ -8,13 +8,18 @@ import {
   Beer,
   Bike,
   Check,
-  ChevronRight,
   ClipboardList,
   CreditCard,
+  Eye,
+  EyeOff,
+  Landmark,
+  LogIn,
+  LogOut,
   MapPin,
   MessageCircle,
   Minus,
   Plus,
+  Save,
   Search,
   Settings,
   ShieldCheck,
@@ -22,15 +27,26 @@ import {
   Trash2,
   Upload,
   Wine,
+  Wrench,
+  X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { categories, deliveryZones, faqs, initialProducts } from "@/lib/catalog";
 import { inferDemoZoneFromAddress } from "@/lib/delivery";
 import { formatCurrency, normalizeText } from "@/lib/format";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
-import type { CartItem, CategoryId, CustomerDetails, DeliveryZone, OrderPayload, Product } from "@/lib/types";
+import { defaultSettings } from "@/lib/settings";
+import type {
+  CartItem,
+  CategoryId,
+  CustomerDetails,
+  OrderPayload,
+  Product,
+  SiteSettings,
+} from "@/lib/types";
 
 const catalogStorageKey = "fonocopete.catalog";
+const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
 
 const emptyCustomer: CustomerDetails = {
@@ -55,17 +71,8 @@ const productDraft: Product = {
 };
 
 export function Storefront() {
-  const [products, setProducts] = useState<Product[]>(() => {
-    if (typeof window === "undefined") return initialProducts;
-    const storedCatalog = window.localStorage.getItem(catalogStorageKey);
-    if (!storedCatalog) return initialProducts;
-    try {
-      return JSON.parse(storedCatalog) as Product[];
-    } catch {
-      window.localStorage.removeItem(catalogStorageKey);
-      return initialProducts;
-    }
-  });
+  const [products, setProducts] = useState<Product[]>(() => readLocal(catalogStorageKey, initialProducts));
+  const [settings, setSettings] = useState<SiteSettings>(() => readLocal(settingsStorageKey, defaultSettings));
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<CategoryId>("promociones");
   const [query, setQuery] = useState("");
@@ -76,37 +83,52 @@ export function Storefront() {
   );
   const [draft, setDraft] = useState<Product>(productDraft);
   const [bulkText, setBulkText] = useState("");
-  const [adminView, setAdminView] = useState<"catalog" | "zones">("catalog");
+  const [adminView, setAdminView] = useState<"catalog" | "settings">("catalog");
   const [productSource, setProductSource] = useState<"local" | "supabase">("local");
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
+  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
+  const [showPayment, setShowPayment] = useState(false);
+  const [checkoutError, setCheckoutError] = useState("");
 
   useEffect(() => {
-    if (productSource === "local") {
-      window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
-    }
+    if (productSource === "local") window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
   }, [products, productSource]);
 
   useEffect(() => {
-    async function loadProducts() {
-      try {
-        const response = await fetch("/api/products");
-        if (!response.ok) return;
-        const data = (await response.json()) as { products: Product[]; source: "demo" | "supabase" };
+    window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
+  }, [settings]);
+
+  useEffect(() => {
+    async function boot() {
+      const [productResponse, settingsResponse, sessionResponse] = await Promise.allSettled([
+        fetch("/api/products"),
+        fetch("/api/settings"),
+        fetch("/api/admin/session"),
+      ]);
+
+      if (productResponse.status === "fulfilled" && productResponse.value.ok) {
+        const data = (await productResponse.value.json()) as { products: Product[]; source: "demo" | "supabase" };
         if (data.source === "supabase") {
           setProductSource("supabase");
-          setProducts(data.products.length > 0 ? data.products : initialProducts);
+          setProducts(data.products.length ? data.products : initialProducts);
         }
-      } catch {
-        setProductSource("local");
+      }
+
+      if (settingsResponse.status === "fulfilled" && settingsResponse.value.ok) {
+        const data = (await settingsResponse.value.json()) as { settings: SiteSettings };
+        setSettings({ ...defaultSettings, ...data.settings });
+      }
+
+      if (sessionResponse.status === "fulfilled" && sessionResponse.value.ok) {
+        const data = (await sessionResponse.value.json()) as { authenticated: boolean };
+        setAdminAuthenticated(data.authenticated);
       }
     }
 
-    void loadProducts();
+    void boot();
   }, []);
 
   const activeZone = deliveryZones.find((zone) => zone.id === customer.zoneId) ?? deliveryZones[0];
-  const paymentLink = process.env.NEXT_PUBLIC_MERCADOPAGO_LINK || "https://www.mercadopago.cl/";
-
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
     return products.filter((product) => {
@@ -117,26 +139,16 @@ export function Storefront() {
       return product.stock !== "hidden" && matchesCategory && matchesQuery;
     });
   }, [products, activeCategory, query]);
-
-  const featuredProducts = useMemo(() => products.filter((product) => product.featured), [products]);
-
-  const cartLines = useMemo(() => {
-    return cart
-      .map((item) => {
-        const product = products.find((entry) => entry.id === item.productId);
-        if (!product) return null;
-        return {
-          ...item,
-          product,
-          lineTotal: product.price * item.quantity,
-        };
-      })
-      .filter(Boolean) as Array<CartItem & { product: Product; lineTotal: number }>;
-  }, [cart, products]);
-
+  const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden").slice(0, 2);
+  const cartLines = cart
+    .map((item) => {
+      const product = products.find((entry) => entry.id === item.productId && entry.stock !== "sold_out");
+      return product ? { ...item, product, lineTotal: product.price * item.quantity } : null;
+    })
+    .filter(Boolean) as Array<CartItem & { product: Product; lineTotal: number }>;
   const subtotal = cartLines.reduce((sum, item) => sum + item.lineTotal, 0);
-  const deliveryPrice = customer.manualAddress ? activeZone.price : activeZone.price;
-  const total = subtotal + (subtotal > 0 ? deliveryPrice : 0);
+  const deliveryPrice = subtotal > 0 ? activeZone.price : 0;
+  const total = subtotal + deliveryPrice;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   function confirmAge() {
@@ -144,15 +156,13 @@ export function Storefront() {
     setAgeConfirmed(true);
   }
 
-  function addToCart(productId: string) {
+  function addToCart(product: Product) {
+    if (product.stock === "sold_out" || product.stock === "hidden" || settings.maintenanceMode) return;
     setCart((current) => {
-      const existing = current.find((item) => item.productId === productId);
-      if (existing) {
-        return current.map((item) =>
-          item.productId === productId ? { ...item, quantity: item.quantity + 1 } : item,
-        );
-      }
-      return [...current, { productId, quantity: 1 }];
+      const existing = current.find((item) => item.productId === product.id);
+      return existing
+        ? current.map((item) => (item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item))
+        : [...current, { productId: product.id, quantity: 1 }];
     });
   }
 
@@ -164,12 +174,9 @@ export function Storefront() {
     );
   }
 
-  function removeProduct(productId: string) {
-    setCart((current) => current.filter((item) => item.productId !== productId));
-  }
-
   function updateCustomer(field: keyof CustomerDetails, value: string | boolean) {
     setCustomer((current) => ({ ...current, [field]: value }));
+    setCheckoutError("");
   }
 
   function detectZone() {
@@ -177,12 +184,22 @@ export function Storefront() {
     if (zone) {
       updateCustomer("zoneId", zone.id);
       updateCustomer("manualAddress", false);
-      return;
+    } else {
+      updateCustomer("manualAddress", true);
     }
-    updateCustomer("manualAddress", true);
   }
 
-  function buildOrder(): OrderPayload {
+  function validateCheckout() {
+    if (settings.maintenanceMode) return "El sitio esta en mantenimiento.";
+    if (!cartLines.length) return "Agrega al menos un producto disponible.";
+    if (!customer.name.trim()) return "Ingresa tu nombre.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo valido.";
+    if (!/^\+?\d[\d\s-]{7,}$/.test(customer.phone)) return "Ingresa un telefono valido.";
+    if (customer.address.trim().length < 3) return "Ingresa tu direccion.";
+    return "";
+  }
+
+  function buildOrder(paymentMethod: OrderPayload["paymentMethod"]): OrderPayload {
     return {
       customer,
       items: cartLines.map((item) => ({
@@ -192,34 +209,43 @@ export function Storefront() {
         lineTotal: item.lineTotal,
       })),
       subtotal,
-      delivery: subtotal > 0 ? deliveryPrice : 0,
+      delivery: deliveryPrice,
       total,
       zoneName: customer.manualAddress ? `${activeZone.name} (manual)` : activeZone.name,
-      paymentLink,
+      paymentLink: settings.mercadoPagoLink,
+      paymentMethod,
     };
   }
 
-  async function submitOrder(event: FormEvent<HTMLFormElement>) {
+  function openPaymentOptions(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (cartLines.length === 0 || !customer.name || !customer.phone || !customer.email || !customer.address) {
-      setOrderStatus("error");
+    const error = validateCheckout();
+    setCheckoutError(error);
+    if (!error) setShowPayment(true);
+  }
+
+  async function completeOrder(paymentMethod: OrderPayload["paymentMethod"]) {
+    const error = validateCheckout();
+    if (error) {
+      setCheckoutError(error);
       return;
     }
 
     setOrderStatus("sending");
-    const order = buildOrder();
-
+    const order = buildOrder(paymentMethod);
     try {
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(order),
       });
-
       if (!response.ok) throw new Error("No se pudo registrar el pedido");
 
+      if (paymentMethod === "mercadopago") window.open(settings.mercadoPagoLink, "_blank", "noopener,noreferrer");
       window.open(buildWhatsAppUrl(order), "_blank", "noopener,noreferrer");
       setOrderStatus("sent");
+      setCart([]);
+      setShowPayment(false);
     } catch {
       window.open(buildWhatsAppUrl(order), "_blank", "noopener,noreferrer");
       setOrderStatus("error");
@@ -238,7 +264,7 @@ export function Storefront() {
       const data = (await response.json()) as { products: Product[]; source: "demo" | "supabase" };
       if (data.source === "supabase") setProductSource("supabase");
       setSyncStatus("saved");
-      return data.products.length > 0 ? data.products : nextProducts;
+      return data.products.length ? data.products : nextProducts;
     } catch {
       setProductSource("local");
       setSyncStatus("error");
@@ -262,6 +288,11 @@ export function Storefront() {
       setProductSource("local");
       setSyncStatus("error");
     }
+  }
+
+  async function deleteProduct(productId: string) {
+    setProducts((current) => current.filter((product) => product.id !== productId));
+    await fetch(`/api/products/${productId}`, { method: "DELETE" }).catch(() => setSyncStatus("error"));
   }
 
   async function addDraftProduct(event: FormEvent<HTMLFormElement>) {
@@ -305,271 +336,111 @@ export function Storefront() {
       })
       .filter((product) => product.name && product.price > 0);
 
-    if (imported.length > 0) {
+    if (imported.length) {
       const savedProducts = await persistProducts(imported);
       setProducts((current) => [...savedProducts, ...current]);
       setBulkText("");
     }
   }
 
+  async function saveSettings(nextSettings: SiteSettings) {
+    setSettings(nextSettings);
+    setSyncStatus("syncing");
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(nextSettings),
+      });
+      if (!response.ok) throw new Error("No se pudo guardar");
+      setSyncStatus("saved");
+    } catch {
+      setSyncStatus("error");
+    }
+  }
+
+  if (settings.maintenanceMode && !adminAuthenticated) {
+    return (
+      <MaintenanceScreen
+        message={settings.maintenanceMessage}
+        onLogin={() => setAdminAuthenticated(true)}
+      />
+    );
+  }
+
   return (
-    <main className="min-h-screen bg-[#fbfaf7] text-neutral-950">
+    <main className="min-h-screen overflow-x-hidden bg-[#f7f4ef] text-neutral-950">
       {!ageConfirmed ? <AgeGate onConfirm={confirmAge} /> : null}
+      {showPayment ? (
+        <PaymentDialog
+          settings={settings}
+          total={total}
+          onClose={() => setShowPayment(false)}
+          onMercadoPago={() => void completeOrder("mercadopago")}
+          onTransfer={() => void completeOrder("transfer")}
+        />
+      ) : null}
 
-      <header className="sticky top-0 z-30 border-b border-neutral-200/80 bg-[#fbfaf7]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <a href="#catalogo" className="flex items-center gap-3">
-            <span className="grid size-11 place-items-center rounded-lg bg-neutral-950 text-white">
-              <Wine size={22} />
-            </span>
-            <span>
-              <span className="block text-lg font-black uppercase leading-none tracking-wide">Fonocopete</span>
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Botilleria delivery</span>
-            </span>
-          </a>
-          <nav className="hidden items-center gap-5 text-sm font-semibold text-neutral-700 md:flex">
-            <a href="#catalogo">Catalogo</a>
-            <a href="#checkout">Pedido</a>
-            <a href="#admin">Admin</a>
-            <a href="#faq">FAQ</a>
-          </nav>
-          <a
-            href="#checkout"
-            className="inline-flex h-11 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white shadow-sm transition hover:bg-red-700"
-          >
-            <ShoppingCart size={18} />
-            <span>{cartCount}</span>
-          </a>
-        </div>
-      </header>
+      <Header businessName={settings.businessName} cartCount={cartCount} />
 
-      <section className="border-b border-neutral-200 bg-neutral-950 text-white">
-        <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:py-14">
-          <div className="flex flex-col justify-center">
+      <section className="bg-neutral-950 text-white">
+        <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_0.78fr] lg:py-12">
+          <div className="flex min-w-0 flex-col justify-center">
             <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
               <ShieldCheck size={17} />
               Solo mayores de 18 anos
             </div>
             <h1 className="max-w-3xl text-4xl font-black leading-tight sm:text-5xl lg:text-6xl">
-              Catalogo vivo para pedir alcohol por WhatsApp.
+              {settings.businessName}
             </h1>
-            <p className="mt-5 max-w-2xl text-lg leading-8 text-neutral-300">
-              Productos, promociones, delivery por zona y confirmacion directa para que Instagram mande al cliente al link,
-              no a un PDF viejo.
+            <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-300 sm:text-lg">
+              Catalogo vivo, carrito simple y confirmacion por WhatsApp para comprar sin pedir PDF.
             </p>
-            <div className="mt-7 grid gap-3 sm:grid-cols-3">
-              <Metric icon={<Beer size={20} />} label="Catalogo" value={`${products.length} productos`} />
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <Metric icon={<Beer size={20} />} label="Catalogo" value={`${products.filter((p) => p.stock !== "hidden").length} productos`} />
               <Metric icon={<Bike size={20} />} label="Despacho" value="Por zonas" />
               <Metric icon={<MessageCircle size={20} />} label="Compra" value="WhatsApp" />
             </div>
           </div>
-          <div className="grid content-end gap-4">
-            {featuredProducts.slice(0, 2).map((product) => (
-              <button
-                key={product.id}
-                type="button"
-                onClick={() => addToCart(product.id)}
-                className="group grid grid-cols-[112px_1fr] overflow-hidden rounded-lg border border-white/10 bg-white text-left text-neutral-950 shadow-2xl transition hover:-translate-y-0.5"
-              >
-                <img src={product.imageUrl} alt="" className="h-full min-h-32 w-full object-cover" />
-                <span className="flex flex-col justify-between p-4">
-                  <span>
-                    <span className="text-xs font-black uppercase tracking-[0.16em] text-red-600">Promo activa</span>
-                    <span className="mt-1 block text-xl font-black">{product.name}</span>
-                    <span className="mt-1 block text-sm text-neutral-600">{product.volume}</span>
-                  </span>
-                  <span className="mt-4 flex items-center justify-between">
-                    <span className="text-2xl font-black">{formatCurrency(product.price)}</span>
-                    <span className="grid size-10 place-items-center rounded-lg bg-neutral-950 text-white transition group-hover:bg-red-600">
-                      <Plus size={19} />
-                    </span>
-                  </span>
-                </span>
-              </button>
+          <div className="grid min-w-0 gap-4">
+            {featuredProducts.map((product) => (
+              <FeaturedProduct key={product.id} product={product} onAdd={() => addToCart(product)} />
             ))}
           </div>
         </div>
       </section>
 
-      <section id="catalogo" className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_390px]">
-        <div>
-          <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <h2 className="text-3xl font-black">Catalogo</h2>
-              <p className="mt-1 text-neutral-600">Ordenado por secciones y listo para comprar.</p>
-            </div>
-            <label className="relative block w-full lg:max-w-sm">
-              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" size={18} />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="h-12 w-full rounded-lg border border-neutral-300 bg-white pl-10 pr-3 text-sm font-medium"
-                placeholder="Buscar producto"
-              />
-            </label>
-          </div>
-
-          <div className="mb-6 flex gap-2 overflow-x-auto pb-2">
-            {categories.map((category) => (
-              <button
-                key={category.id}
-                type="button"
-                onClick={() => setActiveCategory(category.id)}
-                className={`h-11 shrink-0 rounded-lg px-4 text-sm font-black uppercase tracking-wide transition ${
-                  activeCategory === category.id
-                    ? "bg-neutral-950 text-white"
-                    : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-950"
-                }`}
-              >
-                {category.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      <section id="catalogo" className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_390px]">
+        <div className="min-w-0">
+          <CatalogToolbar query={query} setQuery={setQuery} activeCategory={activeCategory} setActiveCategory={setActiveCategory} />
+          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredProducts.map((product) => (
-              <ProductCard key={product.id} product={product} onAdd={() => addToCart(product.id)} />
+              <ProductCard key={product.id} product={product} onAdd={() => addToCart(product)} />
             ))}
           </div>
         </div>
 
-        <aside id="checkout" className="lg:sticky lg:top-24 lg:self-start">
-          <form onSubmit={submitOrder} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-xl font-black">
-                <ShoppingCart size={20} />
-                Pedido
-              </h2>
-              <span className="rounded-lg bg-amber-100 px-3 py-1 text-xs font-black text-amber-900">
-                {cartCount} items
-              </span>
-            </div>
-
-            <div className="max-h-64 space-y-3 overflow-auto pr-1">
-              {cartLines.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-neutral-300 p-5 text-center text-sm font-medium text-neutral-500">
-                  Tu carrito esta esperando la primera promo.
-                </div>
-              ) : (
-                cartLines.map((item) => (
-                  <div key={item.productId} className="grid grid-cols-[56px_1fr] gap-3 rounded-lg border border-neutral-200 p-2">
-                    <img src={item.product.imageUrl} alt="" className="size-14 rounded-md object-cover" />
-                    <div>
-                      <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-black leading-tight">{item.product.name}</p>
-                        <button type="button" onClick={() => removeProduct(item.productId)} className="text-neutral-400 hover:text-red-600">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between">
-                        <div className="flex items-center gap-1">
-                          <IconButton label="Restar" onClick={() => updateQuantity(item.productId, -1)}>
-                            <Minus size={14} />
-                          </IconButton>
-                          <span className="grid h-8 min-w-8 place-items-center text-sm font-black">{item.quantity}</span>
-                          <IconButton label="Sumar" onClick={() => updateQuantity(item.productId, 1)}>
-                            <Plus size={14} />
-                          </IconButton>
-                        </div>
-                        <span className="text-sm font-black">{formatCurrency(item.lineTotal)}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="mt-4 grid gap-3">
-              <Input label="Nombre" value={customer.name} onChange={(value) => updateCustomer("name", value)} required />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Input label="Telefono" value={customer.phone} onChange={(value) => updateCustomer("phone", value)} required />
-                <Input label="Email" type="email" value={customer.email} onChange={(value) => updateCustomer("email", value)} required />
-              </div>
-              <label className="grid gap-1 text-sm font-bold">
-                Direccion
-                <div className="flex gap-2">
-                  <input
-                    value={customer.address}
-                    onChange={(event) => updateCustomer("address", event.target.value)}
-                    className="h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 font-medium"
-                    placeholder="Calle, numero, comuna"
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={detectZone}
-                    title="Calcular zona"
-                    className="grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white"
-                  >
-                    <MapPin size={18} />
-                  </button>
-                </div>
-              </label>
-              <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-sm font-bold">
-                <input
-                  type="checkbox"
-                  checked={customer.manualAddress}
-                  onChange={(event) => updateCustomer("manualAddress", event.target.checked)}
-                />
-                Direccion manual
-              </label>
-              <label className="grid gap-1 text-sm font-bold">
-                Zona de despacho
-                <select
-                  value={customer.zoneId}
-                  onChange={(event) => updateCustomer("zoneId", event.target.value)}
-                  className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium"
-                >
-                  {deliveryZones.map((zone) => (
-                    <option key={zone.id} value={zone.id}>
-                      {zone.name} - {formatCurrency(zone.price)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm font-bold">
-                Notas
-                <textarea
-                  value={customer.notes}
-                  onChange={(event) => updateCustomer("notes", event.target.value)}
-                  className="min-h-20 rounded-lg border border-neutral-300 px-3 py-2 font-medium"
-                  placeholder="Depto, referencia, cambio, etc."
-                />
-              </label>
-            </div>
-
-            <OrderTotals subtotal={subtotal} zone={activeZone} delivery={subtotal > 0 ? deliveryPrice : 0} total={total} />
-
-            <a
-              href={paymentLink}
-              target="_blank"
-              rel="noreferrer"
-              className="mb-2 mt-4 flex h-12 items-center justify-center gap-2 rounded-lg border border-neutral-950 bg-white text-sm font-black text-neutral-950 transition hover:bg-neutral-100"
-            >
-              <CreditCard size={18} />
-              Abrir pago MercadoPago
-            </a>
-            <button
-              type="submit"
-              className="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-green-600 text-sm font-black text-white transition hover:bg-green-700 disabled:opacity-50"
-              disabled={orderStatus === "sending"}
-            >
-              <MessageCircle size={18} />
-              {orderStatus === "sending" ? "Enviando..." : "Confirmar por WhatsApp"}
-            </button>
-            {orderStatus === "sent" ? (
-              <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-bold text-green-800">Pedido registrado y WhatsApp abierto.</p>
-            ) : null}
-            {orderStatus === "error" ? (
-              <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">
-                Revisa los datos. Si el correo falla, el WhatsApp igual queda preparado.
-              </p>
-            ) : null}
-          </form>
-        </aside>
+        <CheckoutPanel
+          cartLines={cartLines}
+          cartCount={cartCount}
+          customer={customer}
+          activeZone={activeZone}
+          subtotal={subtotal}
+          deliveryPrice={deliveryPrice}
+          total={total}
+          orderStatus={orderStatus}
+          checkoutError={checkoutError}
+          onSubmit={openPaymentOptions}
+          onRemove={(productId) => setCart((current) => current.filter((item) => item.productId !== productId))}
+          onQuantity={updateQuantity}
+          onCustomer={updateCustomer}
+          onDetectZone={detectZone}
+        />
       </section>
 
       <AdminPanel
+        authenticated={adminAuthenticated}
+        setAuthenticated={setAdminAuthenticated}
         products={products}
         setProducts={setProducts}
         draft={draft}
@@ -583,6 +454,9 @@ export function Storefront() {
         productSource={productSource}
         syncStatus={syncStatus}
         onSaveProduct={persistProduct}
+        onDeleteProduct={deleteProduct}
+        settings={settings}
+        onSaveSettings={saveSettings}
       />
 
       <InfoSections />
@@ -590,40 +464,341 @@ export function Storefront() {
   );
 }
 
-function ProductCard({ product, onAdd }: { product: Product; onAdd: () => void }) {
+function readLocal<T>(key: string, fallback: T): T {
+  if (typeof window === "undefined") return fallback;
+  const stored = window.localStorage.getItem(key);
+  if (!stored) return fallback;
+  try {
+    return JSON.parse(stored) as T;
+  } catch {
+    window.localStorage.removeItem(key);
+    return fallback;
+  }
+}
+
+function Header({ businessName, cartCount }: { businessName: string; cartCount: number }) {
   return (
-    <article className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+    <header className="sticky top-0 z-30 border-b border-neutral-200/80 bg-[#f7f4ef]/95 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <a href="#catalogo" className="flex min-w-0 items-center gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
+            <Wine size={22} />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-base font-black uppercase leading-tight tracking-wide sm:text-lg">{businessName}</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Botilleria delivery</span>
+          </span>
+        </a>
+        <nav className="hidden items-center gap-5 text-sm font-semibold text-neutral-700 md:flex">
+          <a href="#catalogo">Catalogo</a>
+          <a href="#checkout">Pedido</a>
+          <a href="#admin">Admin</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <a href="#checkout" className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white">
+          <ShoppingCart size={18} />
+          <span>{cartCount}</span>
+        </a>
+      </div>
+    </header>
+  );
+}
+
+function CatalogToolbar(props: {
+  query: string;
+  setQuery: (value: string) => void;
+  activeCategory: CategoryId;
+  setActiveCategory: (value: CategoryId) => void;
+}) {
+  return (
+    <>
+      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 className="text-3xl font-black">Catalogo</h2>
+          <p className="mt-1 text-neutral-600">Ordenado por secciones y listo para comprar.</p>
+        </div>
+        <label className="relative block w-full lg:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" size={18} />
+          <input
+            value={props.query}
+            onChange={(event) => props.setQuery(event.target.value)}
+            className="h-12 w-full rounded-lg border border-neutral-300 bg-white pl-10 pr-3 text-sm font-medium"
+            placeholder="Buscar producto"
+          />
+        </label>
+      </div>
+      <div className="mb-6 flex max-w-full gap-2 overflow-x-auto pb-2">
+        {categories.map((category) => (
+          <button
+            key={category.id}
+            type="button"
+            onClick={() => props.setActiveCategory(category.id)}
+            className={`h-11 shrink-0 rounded-lg px-4 text-sm font-black uppercase tracking-wide transition ${
+              props.activeCategory === category.id ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+            }`}
+          >
+            {category.label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function FeaturedProduct({ product, onAdd }: { product: Product; onAdd: () => void }) {
+  const soldOut = product.stock === "sold_out";
+  return (
+    <button
+      type="button"
+      onClick={onAdd}
+      disabled={soldOut}
+      className="grid min-w-0 grid-cols-[96px_minmax(0,1fr)] overflow-hidden rounded-lg border border-white/10 bg-white text-left text-neutral-950 shadow-2xl disabled:opacity-75 sm:grid-cols-[112px_minmax(0,1fr)]"
+    >
+      <img src={product.imageUrl} alt="" className="h-full min-h-28 w-full object-cover" />
+      <span className="min-w-0 p-4">
+        <span className="text-xs font-black uppercase tracking-[0.16em] text-red-600">{soldOut ? "Agotado" : "Promo activa"}</span>
+        <span className="mt-1 block truncate text-lg font-black sm:text-xl">{product.name}</span>
+        <span className="mt-1 block text-sm text-neutral-600">{product.volume}</span>
+        <span className="mt-3 flex items-center justify-between gap-2">
+          <span className="text-xl font-black sm:text-2xl">{formatCurrency(product.price)}</span>
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
+            <Plus size={19} />
+          </span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function ProductCard({ product, onAdd }: { product: Product; onAdd: () => void }) {
+  const soldOut = product.stock === "sold_out";
+  return (
+    <article className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
       <div className="relative aspect-[4/3] bg-neutral-100">
         <img src={product.imageUrl} alt="" className="h-full w-full object-cover" />
-        {product.stock === "low" ? (
-          <span className="absolute left-3 top-3 rounded-lg bg-amber-300 px-2 py-1 text-xs font-black text-neutral-950">
-            Ultimas unidades
-          </span>
+        {soldOut ? (
+          <span className="absolute left-3 top-3 rounded-md bg-red-600 px-2 py-1 text-xs font-black text-white">AGOTADO</span>
+        ) : product.stock === "low" ? (
+          <span className="absolute left-3 top-3 rounded-md bg-amber-300 px-2 py-1 text-xs font-black text-neutral-950">Ultimas unidades</span>
         ) : null}
       </div>
       <div className="p-4">
         <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-black leading-tight">{product.name}</h3>
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-black leading-tight">{product.name}</h3>
             <p className="mt-1 text-sm font-semibold text-neutral-500">{product.volume}</p>
           </div>
-          <span className="text-lg font-black text-red-600">{formatCurrency(product.price)}</span>
+          <span className="shrink-0 text-lg font-black text-red-600">{formatCurrency(product.price)}</span>
         </div>
         <p className="min-h-10 text-sm leading-5 text-neutral-600">{product.description}</p>
         <button
           type="button"
           onClick={onAdd}
-          className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white transition hover:bg-red-600"
+          disabled={soldOut}
+          className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-600"
         >
           <Plus size={18} />
-          Agregar
+          {soldOut ? "Agotado" : "Agregar"}
         </button>
       </div>
     </article>
   );
 }
 
+function CheckoutPanel(props: {
+  cartLines: Array<CartItem & { product: Product; lineTotal: number }>;
+  cartCount: number;
+  customer: CustomerDetails;
+  activeZone: { id: string; name: string; price: number; eta: string };
+  subtotal: number;
+  deliveryPrice: number;
+  total: number;
+  orderStatus: "idle" | "sending" | "sent" | "error";
+  checkoutError: string;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onRemove: (productId: string) => void;
+  onQuantity: (productId: string, delta: number) => void;
+  onCustomer: (field: keyof CustomerDetails, value: string | boolean) => void;
+  onDetectZone: () => void;
+}) {
+  return (
+    <aside id="checkout" className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+      <form onSubmit={props.onSubmit} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-xl font-black">
+            <ShoppingCart size={20} />
+            Pedido
+          </h2>
+          <span className="rounded-lg bg-amber-100 px-3 py-1 text-xs font-black text-amber-900">{props.cartCount} items</span>
+        </div>
+        <div className="max-h-64 space-y-3 overflow-auto pr-1">
+          {props.cartLines.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-neutral-300 p-5 text-center text-sm font-medium text-neutral-500">
+              Tu carrito esta esperando la primera promo.
+            </div>
+          ) : (
+            props.cartLines.map((item) => (
+              <div key={item.productId} className="grid grid-cols-[56px_minmax(0,1fr)] gap-3 rounded-lg border border-neutral-200 p-2">
+                <img src={item.product.imageUrl} alt="" className="size-14 rounded-md object-cover" />
+                <div className="min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="truncate text-sm font-black leading-tight">{item.product.name}</p>
+                    <button type="button" onClick={() => props.onRemove(item.productId)} className="text-neutral-400 hover:text-red-600">
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <div className="flex items-center gap-1">
+                      <IconButton label="Restar" onClick={() => props.onQuantity(item.productId, -1)}>
+                        <Minus size={14} />
+                      </IconButton>
+                      <span className="grid h-8 min-w-8 place-items-center text-sm font-black">{item.quantity}</span>
+                      <IconButton label="Sumar" onClick={() => props.onQuantity(item.productId, 1)}>
+                        <Plus size={14} />
+                      </IconButton>
+                    </div>
+                    <span className="text-sm font-black">{formatCurrency(item.lineTotal)}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="mt-4 grid gap-3">
+          <Input label="Nombre" value={props.customer.name} onChange={(value) => props.onCustomer("name", value)} required />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input label="Telefono" value={props.customer.phone} onChange={(value) => props.onCustomer("phone", value)} required />
+            <Input label="Email" type="email" value={props.customer.email} onChange={(value) => props.onCustomer("email", value)} required />
+          </div>
+          <label className="grid gap-1 text-sm font-bold">
+            Direccion
+            <div className="flex gap-2">
+              <input
+                value={props.customer.address}
+                onChange={(event) => props.onCustomer("address", event.target.value)}
+                className="h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 font-medium"
+                placeholder="Calle, numero, comuna"
+                required
+              />
+              <button type="button" onClick={props.onDetectZone} title="Calcular zona" className="grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
+                <MapPin size={18} />
+              </button>
+            </div>
+          </label>
+          <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-sm font-bold">
+            <input type="checkbox" checked={props.customer.manualAddress} onChange={(event) => props.onCustomer("manualAddress", event.target.checked)} />
+            Direccion manual
+          </label>
+          <label className="grid gap-1 text-sm font-bold">
+            Zona de despacho
+            <select value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
+              {deliveryZones.map((zone) => (
+                <option key={zone.id} value={zone.id}>
+                  {zone.name} - {formatCurrency(zone.price)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-bold">
+            Notas
+            <textarea value={props.customer.notes} onChange={(event) => props.onCustomer("notes", event.target.value)} className="min-h-20 rounded-lg border border-neutral-300 px-3 py-2 font-medium" />
+          </label>
+        </div>
+        <OrderTotals subtotal={props.subtotal} delivery={props.deliveryPrice} total={props.total} zone={props.activeZone} />
+        {props.checkoutError ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{props.checkoutError}</p> : null}
+        <button type="submit" className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-red-600 text-sm font-black text-white hover:bg-red-700">
+          <CreditCard size={18} />
+          Completar Pago
+        </button>
+        {props.orderStatus === "sent" ? <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-bold text-green-800">Pedido registrado.</p> : null}
+        {props.orderStatus === "error" ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">Hubo un problema registrando el pedido.</p> : null}
+      </form>
+    </aside>
+  );
+}
+
+function PaymentDialog(props: {
+  settings: SiteSettings;
+  total: number;
+  onClose: () => void;
+  onMercadoPago: () => void;
+  onTransfer: () => void;
+}) {
+  const comprobanteUrl = `https://wa.me/${props.settings.whatsappNumber}?text=${encodeURIComponent(
+    "Hola, realicé una transferencia y deseo enviar mi comprobante de pago.",
+  )}`;
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-neutral-950/80 px-4 py-6 backdrop-blur">
+      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-black">Completar Pago</h2>
+            <p className="text-sm font-semibold text-neutral-500">Total: {formatCurrency(props.total)}</p>
+          </div>
+          <button type="button" onClick={props.onClose} className="grid size-10 place-items-center rounded-lg bg-neutral-100">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border border-neutral-200 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <CreditCard className="text-sky-600" size={22} />
+              <h3 className="text-lg font-black">Pagar con Mercado Pago</h3>
+            </div>
+            <div className="mb-4 inline-flex items-center rounded-md bg-sky-100 px-3 py-2 text-sm font-black text-sky-800">
+              Mercado Pago
+            </div>
+            <p className="text-sm leading-6 text-neutral-600">Se abrira el link de pago configurado. La integracion queda preparada para credenciales reales.</p>
+            <button type="button" onClick={props.onMercadoPago} className="mt-4 h-11 w-full rounded-lg bg-sky-600 text-sm font-black text-white">
+              Pagar con Mercado Pago
+            </button>
+          </div>
+          <div className="rounded-lg border border-neutral-200 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <Landmark className="text-green-700" size={22} />
+              <h3 className="text-lg font-black">Transferencia</h3>
+            </div>
+            <BankDetails settings={props.settings} />
+            <a href={comprobanteUrl} target="_blank" rel="noreferrer" className="mt-4 flex h-11 items-center justify-center gap-2 rounded-lg bg-green-600 text-sm font-black text-white">
+              <MessageCircle size={18} />
+              Enviar comprobante por WhatsApp
+            </a>
+            <button type="button" onClick={props.onTransfer} className="mt-2 h-11 w-full rounded-lg border border-neutral-300 text-sm font-black">
+              Registrar pedido por transferencia
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BankDetails({ settings }: { settings: SiteSettings }) {
+  const bank = settings.bankDetails;
+  return (
+    <dl className="grid gap-2 text-sm">
+      <Detail label="Banco" value={bank.bank} />
+      <Detail label="Titular" value={bank.accountHolder} />
+      <Detail label={bank.accountType} value={bank.accountNumber} />
+      <Detail label="RUT" value={bank.rut} />
+      <Detail label="Correo" value={bank.email} />
+    </dl>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3 rounded-md bg-neutral-100 px-3 py-2">
+      <dt className="font-bold text-neutral-600">{label}</dt>
+      <dd className="text-right font-black">{value}</dd>
+    </div>
+  );
+}
+
 function AdminPanel(props: {
+  authenticated: boolean;
+  setAuthenticated: (value: boolean) => void;
   products: Product[];
   setProducts: (products: Product[]) => void;
   draft: Product;
@@ -632,39 +807,63 @@ function AdminPanel(props: {
   bulkText: string;
   setBulkText: (value: string) => void;
   importBulkProducts: () => Promise<void>;
-  adminView: "catalog" | "zones";
-  setAdminView: (value: "catalog" | "zones") => void;
+  adminView: "catalog" | "settings";
+  setAdminView: (value: "catalog" | "settings") => void;
   productSource: "local" | "supabase";
   syncStatus: "idle" | "syncing" | "saved" | "error";
   onSaveProduct: (product: Product) => Promise<void>;
+  onDeleteProduct: (productId: string) => Promise<void>;
+  settings: SiteSettings;
+  onSaveSettings: (settings: SiteSettings) => Promise<void>;
 }) {
-  const {
-    products,
-    setProducts,
-    draft,
-    setDraft,
-    onSubmit,
-    bulkText,
-    setBulkText,
-    importBulkProducts,
-    adminView,
-    setAdminView,
-    productSource,
-    syncStatus,
-    onSaveProduct,
-  } = props;
+  const [login, setLogin] = useState({ username: "bodegon", password: "" });
+  const [loginError, setLoginError] = useState("");
 
-  function updateProduct(productId: string, field: keyof Product, value: string | number) {
-    setProducts(
-      products.map((product) =>
-        product.id === productId
-          ? {
-              ...product,
-              [field]: field === "price" ? Number(value) : value,
-            }
-          : product,
-      ),
+  async function submitLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const response = await fetch("/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(login),
+    });
+    if (response.ok) {
+      props.setAuthenticated(true);
+      setLogin({ username: "bodegon", password: "" });
+      setLoginError("");
+    } else {
+      setLoginError("Usuario o contraseña incorrectos.");
+    }
+  }
+
+  async function logout() {
+    await fetch("/api/admin/logout", { method: "POST" });
+    props.setAuthenticated(false);
+  }
+
+  if (!props.authenticated) {
+    return (
+      <section id="admin" className="border-y border-neutral-200 bg-white px-4 py-10 sm:px-6">
+        <form onSubmit={submitLogin} className="mx-auto max-w-sm rounded-lg border border-neutral-200 bg-[#f7f4ef] p-5">
+          <h2 className="mb-4 flex items-center gap-2 text-2xl font-black">
+            <LogIn size={22} />
+            Administracion
+          </h2>
+          <Input label="Usuario" value={login.username} onChange={(value) => setLogin({ ...login, username: value })} />
+          <div className="mt-3">
+            <Input label="Contraseña" type="password" value={login.password} onChange={(value) => setLogin({ ...login, password: value })} />
+          </div>
+          {loginError ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{loginError}</p> : null}
+          <button className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
+            <ShieldCheck size={18} />
+            Entrar
+          </button>
+        </form>
+      </section>
     );
+  }
+
+  function updateProduct(productId: string, updater: (product: Product) => Product) {
+    props.setProducts(props.products.map((product) => (product.id === productId ? updater(product) : product)));
   }
 
   return (
@@ -677,158 +876,194 @@ function AdminPanel(props: {
               Admin
             </h2>
             <p className="mt-1 text-neutral-600">
-              Carga rapida desde PC o celular. Guardado: {productSource === "supabase" ? "Supabase" : "local demo"}
-              {syncStatus === "syncing" ? " (sincronizando)" : ""}
-              {syncStatus === "saved" ? " (guardado)" : ""}
-              {syncStatus === "error" ? " (sin conexion real)" : ""}
+              Guardado: {props.productSource === "supabase" ? "Supabase" : "local demo"}
+              {props.syncStatus === "syncing" ? " (sincronizando)" : ""}
+              {props.syncStatus === "saved" ? " (guardado)" : ""}
+              {props.syncStatus === "error" ? " (revisar conexion)" : ""}
             </p>
           </div>
-          <div className="flex rounded-lg border border-neutral-300 bg-neutral-100 p-1">
-            <SegmentButton active={adminView === "catalog"} onClick={() => setAdminView("catalog")}>
-              Catalogo
-            </SegmentButton>
-            <SegmentButton active={adminView === "zones"} onClick={() => setAdminView("zones")}>
-              Zonas
-            </SegmentButton>
+          <div className="flex flex-wrap gap-2">
+            <SegmentButton active={props.adminView === "catalog"} onClick={() => props.setAdminView("catalog")}>Catalogo</SegmentButton>
+            <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
+            <button type="button" onClick={() => void logout()} className="flex h-10 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm font-black">
+              <LogOut size={16} />
+              Salir
+            </button>
           </div>
         </div>
-
-        {adminView === "catalog" ? (
-          <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-            <div className="grid gap-4">
-              <form onSubmit={onSubmit} className="rounded-lg border border-neutral-200 bg-[#fbfaf7] p-4">
-                <h3 className="mb-4 flex items-center gap-2 text-lg font-black">
-                  <Plus size={18} />
-                  Nuevo producto
-                </h3>
-                <div className="grid gap-3">
-                  <Input label="Nombre" value={draft.name} onChange={(value) => setDraft({ ...draft, name: value })} />
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <Input
-                      label="Precio"
-                      type="number"
-                      value={String(draft.price || "")}
-                      onChange={(value) => setDraft({ ...draft, price: Number(value) })}
-                    />
-                    <label className="grid gap-1 text-sm font-bold">
-                      Categoria
-                      <select
-                        value={draft.category}
-                        onChange={(event) => setDraft({ ...draft, category: event.target.value as CategoryId })}
-                        className="h-11 rounded-lg border border-neutral-300 bg-white px-3"
-                      >
-                        {categories.map((category) => (
-                          <option key={category.id} value={category.id}>
-                            {category.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <Input label="Formato" value={draft.volume} onChange={(value) => setDraft({ ...draft, volume: value })} />
-                  <Input label="Foto URL" value={draft.imageUrl} onChange={(value) => setDraft({ ...draft, imageUrl: value })} />
-                  <label className="grid gap-1 text-sm font-bold">
-                    Descripcion
-                    <textarea
-                      value={draft.description}
-                      onChange={(event) => setDraft({ ...draft, description: event.target.value })}
-                      className="min-h-20 rounded-lg border border-neutral-300 px-3 py-2"
-                    />
-                  </label>
-                  <button className="flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
-                    <Check size={18} />
-                    Guardar producto
-                  </button>
-                </div>
-              </form>
-
-              <div className="rounded-lg border border-neutral-200 bg-[#fbfaf7] p-4">
-                <h3 className="mb-3 flex items-center gap-2 text-lg font-black">
-                  <Upload size={18} />
-                  Carga masiva
-                </h3>
-                <textarea
-                  value={bulkText}
-                  onChange={(event) => setBulkText(event.target.value)}
-                  className="min-h-32 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                  placeholder="Nombre;12990;promociones;750 cc;https://foto.jpg"
-                />
-                <button
-                  type="button"
-                  onClick={importBulkProducts}
-                  className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-red-600 text-sm font-black text-white"
-                >
-                  <ClipboardList size={18} />
-                  Importar lista
-                </button>
-              </div>
-            </div>
-
-            <div className="overflow-hidden rounded-lg border border-neutral-200">
-              <div className="grid grid-cols-[1fr_120px_110px] bg-neutral-950 px-4 py-3 text-xs font-black uppercase tracking-wide text-white">
-                <span>Producto</span>
-                <span>Precio</span>
-                <span>Estado</span>
-              </div>
-              <div className="max-h-[560px] divide-y divide-neutral-200 overflow-auto bg-white">
-                {products.map((product) => (
-                  <div key={product.id} className="grid grid-cols-[1fr_120px_110px] gap-3 px-4 py-3">
-                    <div className="min-w-0">
-                      <input
-                        value={product.name}
-                        onChange={(event) => updateProduct(product.id, "name", event.target.value)}
-                        onBlur={() => {
-                          const nextProduct = products.find((entry) => entry.id === product.id);
-                          if (nextProduct) void onSaveProduct(nextProduct);
-                        }}
-                        className="w-full rounded-md border border-transparent px-2 py-1 font-bold hover:border-neutral-300"
-                      />
-                      <p className="truncate px-2 text-xs font-semibold text-neutral-500">{product.category}</p>
-                    </div>
-                    <input
-                      value={product.price}
-                      onChange={(event) => updateProduct(product.id, "price", event.target.value)}
-                      onBlur={() => {
-                        const nextProduct = products.find((entry) => entry.id === product.id);
-                        if (nextProduct) void onSaveProduct(nextProduct);
-                      }}
-                      className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold"
-                      type="number"
-                    />
-                    <select
-                      value={product.stock}
-                      onChange={(event) => {
-                        const stock = event.target.value as Product["stock"];
-                        updateProduct(product.id, "stock", stock);
-                        void onSaveProduct({ ...product, stock });
-                      }}
-                      className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold"
-                    >
-                      <option value="available">Activo</option>
-                      <option value="low">Bajo</option>
-                      <option value="hidden">Oculto</option>
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+        {props.adminView === "catalog" ? (
+          <CatalogAdmin {...props} updateProduct={updateProduct} />
         ) : (
-          <div className="grid gap-4 md:grid-cols-3">
-            {deliveryZones.map((zone) => (
-              <ZoneCard key={zone.id} zone={zone} />
-            ))}
-          </div>
+          <SettingsAdmin
+            key={`${props.settings.businessName}-${props.settings.maintenanceMode}`}
+            settings={props.settings}
+            onSaveSettings={props.onSaveSettings}
+          />
         )}
       </div>
     </section>
   );
 }
 
+function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct: (productId: string, updater: (product: Product) => Product) => void }) {
+  return (
+    <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid gap-4">
+        <form onSubmit={props.onSubmit} className="rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+          <h3 className="mb-4 flex items-center gap-2 text-lg font-black">
+            <Plus size={18} />
+            Nuevo producto
+          </h3>
+          <div className="grid gap-3">
+            <Input label="Nombre" value={props.draft.name} onChange={(value) => props.setDraft({ ...props.draft, name: value })} />
+            <Input label="Precio" type="number" value={String(props.draft.price || "")} onChange={(value) => props.setDraft({ ...props.draft, price: Number(value) })} />
+            <SelectCategory value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category })} />
+            <Input label="Formato" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
+            <Input label="Foto URL" value={props.draft.imageUrl} onChange={(value) => props.setDraft({ ...props.draft, imageUrl: value })} />
+            <Textarea label="Descripcion" value={props.draft.description} onChange={(value) => props.setDraft({ ...props.draft, description: value })} />
+            <button className="flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
+              <Check size={18} />
+              Guardar producto
+            </button>
+          </div>
+        </form>
+        <div className="rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+          <h3 className="mb-3 flex items-center gap-2 text-lg font-black">
+            <Upload size={18} />
+            Carga masiva
+          </h3>
+          <textarea value={props.bulkText} onChange={(event) => props.setBulkText(event.target.value)} className="min-h-32 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" placeholder="Nombre;12990;promociones;750 cc;https://foto.jpg" />
+          <button type="button" onClick={() => void props.importBulkProducts()} className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-red-600 text-sm font-black text-white">
+            <ClipboardList size={18} />
+            Importar lista
+          </button>
+        </div>
+      </div>
+      <div className="grid gap-3">
+        {props.products.map((product) => (
+          <div key={product.id} className="rounded-lg border border-neutral-200 bg-white p-3">
+            <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_150px]">
+              <img src={product.imageUrl} alt="" className="h-24 w-full rounded-lg object-cover md:h-full" />
+              <div className="grid min-w-0 gap-2">
+                <input value={product.name} onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, name: event.target.value }))} onBlur={() => void props.onSaveProduct(product)} className="rounded-md border border-neutral-300 px-3 py-2 font-black" />
+                <textarea value={product.description} onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, description: event.target.value }))} onBlur={() => void props.onSaveProduct(product)} className="min-h-16 rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+                <input value={product.imageUrl} onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, imageUrl: event.target.value }))} onBlur={() => void props.onSaveProduct(product)} className="rounded-md border border-neutral-300 px-3 py-2 text-xs" />
+              </div>
+              <div className="grid gap-2">
+                <input value={product.price} type="number" onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, price: Number(event.target.value) }))} onBlur={() => void props.onSaveProduct(product)} className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold" />
+                <SelectCategory value={product.category} onChange={(category) => props.updateProduct(product.id, (item) => ({ ...item, category }))} onBlur={() => void props.onSaveProduct(product)} />
+                <select value={product.stock} onChange={(event) => {
+                  const stock = event.target.value as Product["stock"];
+                  const nextProduct = { ...product, stock };
+                  props.updateProduct(product.id, () => nextProduct);
+                  void props.onSaveProduct(nextProduct);
+                }} className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold">
+                  <option value="available">Activo</option>
+                  <option value="low">Bajo stock</option>
+                  <option value="sold_out">Agotado</option>
+                  <option value="hidden">Oculto</option>
+                </select>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => {
+                    const stock = product.stock === "hidden" ? "available" : "hidden";
+                    const nextProduct = { ...product, stock: stock as Product["stock"] };
+                    props.updateProduct(product.id, () => nextProduct);
+                    void props.onSaveProduct(nextProduct);
+                  }} className="grid h-10 place-items-center rounded-md border border-neutral-300" title={product.stock === "hidden" ? "Mostrar" : "Ocultar"}>
+                    {product.stock === "hidden" ? <Eye size={17} /> : <EyeOff size={17} />}
+                  </button>
+                  <button type="button" onClick={() => void props.onDeleteProduct(product.id)} className="grid h-10 place-items-center rounded-md bg-red-50 text-red-700" title="Eliminar">
+                    <Trash2 size={17} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SettingsAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSaveSettings: (settings: SiteSettings) => Promise<void> }) {
+  const [draft, setDraft] = useState(settings);
+
+  return (
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      void onSaveSettings(draft);
+    }} className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 lg:grid-cols-2">
+      <Input label="Nombre del negocio" value={draft.businessName} onChange={(value) => setDraft({ ...draft, businessName: value })} />
+      <Input label="WhatsApp" value={draft.whatsappNumber} onChange={(value) => setDraft({ ...draft, whatsappNumber: value })} />
+      <Input label="Link Mercado Pago" value={draft.mercadoPagoLink} onChange={(value) => setDraft({ ...draft, mercadoPagoLink: value })} />
+      <label className="flex items-center gap-2 rounded-lg bg-white px-3 py-3 text-sm font-black">
+        <input type="checkbox" checked={!draft.maintenanceMode} onChange={(event) => setDraft({ ...draft, maintenanceMode: !event.target.checked })} />
+        Activar sitio
+      </label>
+      <div className="lg:col-span-2">
+        <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
+      </div>
+      <Input label="Banco" value={draft.bankDetails.bank} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, bank: value } })} />
+      <Input label="Titular" value={draft.bankDetails.accountHolder} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountHolder: value } })} />
+      <Input label="Tipo de cuenta" value={draft.bankDetails.accountType} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountType: value } })} />
+      <Input label="Numero de cuenta" value={draft.bankDetails.accountNumber} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountNumber: value } })} />
+      <Input label="RUT" value={draft.bankDetails.rut} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, rut: value } })} />
+      <Input label="Correo pagos" type="email" value={draft.bankDetails.email} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, email: value } })} />
+      <button className="flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white lg:col-span-2">
+        <Save size={18} />
+        Guardar ajustes
+      </button>
+    </form>
+  );
+}
+
+function MaintenanceScreen({ message, onLogin }: { message: string; onLogin: () => void }) {
+  return (
+    <main className="grid min-h-screen place-items-center bg-neutral-950 px-4 text-white">
+      <div className="w-full max-w-lg text-center">
+        <div className="mx-auto mb-5 grid size-16 place-items-center rounded-lg bg-amber-300 text-neutral-950">
+          <Wrench size={32} />
+        </div>
+        <h1 className="text-4xl font-black">Fonocopete MAVERIK</h1>
+        <p className="mt-4 text-lg leading-8 text-neutral-300">{message}</p>
+        <div className="mt-8 rounded-lg bg-white p-4 text-left text-neutral-950">
+          <AdminLoginMini onLogin={onLogin} />
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function AdminLoginMini({ onLogin }: { onLogin: () => void }) {
+  const [login, setLogin] = useState({ username: "bodegon", password: "" });
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const response = await fetch("/api/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(login),
+    });
+    if (response.ok) onLogin();
+    else setError("Credenciales incorrectas.");
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-3">
+      <p className="font-black">Acceso administrador</p>
+      <Input label="Usuario" value={login.username} onChange={(value) => setLogin({ ...login, username: value })} />
+      <Input label="Contraseña" type="password" value={login.password} onChange={(value) => setLogin({ ...login, password: value })} />
+      {error ? <p className="text-sm font-bold text-red-700">{error}</p> : null}
+      <button className="h-11 rounded-lg bg-neutral-950 text-sm font-black text-white">Entrar</button>
+    </form>
+  );
+}
+
 function InfoSections() {
   return (
-    <footer className="bg-[#fbfaf7]">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1fr_1fr]">
+    <footer className="bg-[#f7f4ef]">
+      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-2">
         <section id="faq">
           <h2 className="mb-4 text-3xl font-black">Preguntas frecuentes</h2>
           <div className="grid gap-3">
@@ -840,13 +1075,12 @@ function InfoSections() {
             ))}
           </div>
         </section>
-
         <section id="terminos" className="rounded-lg border border-neutral-200 bg-neutral-950 p-6 text-white">
           <h2 className="mb-4 text-3xl font-black">Terminos</h2>
           <div className="grid gap-4 text-sm leading-7 text-neutral-300">
             <p>Venta exclusiva para mayores de 18 anos. La entrega puede requerir cedula de identidad.</p>
             <p>La disponibilidad, precios y tiempos de despacho pueden variar hasta la confirmacion final por WhatsApp.</p>
-            <p>El link de MercadoPago funciona como pago externo. La botilleria verifica manualmente el monto antes de despachar.</p>
+            <p>El link de MercadoPago funciona como pago externo hasta configurar credenciales reales.</p>
             <p>Las direcciones manuales quedan sujetas a cobertura y costo de despacho confirmado por el local.</p>
           </div>
           <div className="mt-6 flex items-center gap-2 rounded-lg bg-white/10 p-3 text-sm font-bold text-amber-100">
@@ -867,14 +1101,8 @@ function AgeGate({ onConfirm }: { onConfirm: () => void }) {
           <ShieldCheck size={28} />
         </div>
         <h2 className="text-2xl font-black">Solo mayores de 18 anos</h2>
-        <p className="mt-3 leading-7 text-neutral-600">
-          Los tiempos de espera son referenciales y pueden cambiar segun demanda, distancia y disponibilidad.
-        </p>
-        <button
-          type="button"
-          onClick={onConfirm}
-          className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white"
-        >
+        <p className="mt-3 leading-7 text-neutral-600">Los tiempos de espera son referenciales y pueden cambiar segun demanda, distancia y disponibilidad.</p>
+        <button type="button" onClick={onConfirm} className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
           <BadgeCheck size={18} />
           Soy mayor de 18
         </button>
@@ -895,50 +1123,46 @@ function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; 
 
 function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="grid size-8 place-items-center rounded-md border border-neutral-300 text-neutral-700 hover:border-neutral-950"
-    >
+    <button type="button" aria-label={label} title={label} onClick={onClick} className="grid size-8 place-items-center rounded-md border border-neutral-300 text-neutral-700 hover:border-neutral-950">
       {children}
     </button>
   );
 }
 
-function Input(props: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: string;
-  required?: boolean;
-}) {
+function Input(props: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean }) {
   return (
     <label className="grid gap-1 text-sm font-bold">
       {props.label}
-      <input
-        type={props.type || "text"}
-        value={props.value}
-        onChange={(event) => props.onChange(event.target.value)}
-        className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium"
-        required={props.required}
-      />
+      <input type={props.type || "text"} value={props.value} onChange={(event) => props.onChange(event.target.value)} className="h-11 min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-medium" required={props.required} />
     </label>
   );
 }
 
-function OrderTotals({
-  subtotal,
-  delivery,
-  total,
-  zone,
-}: {
-  subtotal: number;
-  delivery: number;
-  total: number;
-  zone: DeliveryZone;
-}) {
+function Textarea(props: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="grid gap-1 text-sm font-bold">
+      {props.label}
+      <textarea value={props.value} onChange={(event) => props.onChange(event.target.value)} className="min-h-20 rounded-lg border border-neutral-300 px-3 py-2" />
+    </label>
+  );
+}
+
+function SelectCategory(props: { value: CategoryId; onChange: (value: CategoryId) => void; onBlur?: () => void }) {
+  return (
+    <label className="grid gap-1 text-sm font-bold">
+      Categoria
+      <select value={props.value} onChange={(event) => props.onChange(event.target.value as CategoryId)} onBlur={props.onBlur} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-bold">
+        {categories.map((category) => (
+          <option key={category.id} value={category.id}>
+            {category.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function OrderTotals({ subtotal, delivery, total, zone }: { subtotal: number; delivery: number; total: number; zone: { name: string; eta: string } }) {
   return (
     <div className="mt-4 rounded-lg bg-neutral-100 p-4">
       <div className="flex items-center justify-between text-sm font-bold text-neutral-600">
@@ -963,33 +1187,8 @@ function OrderTotals({
 
 function SegmentButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`h-10 rounded-md px-4 text-sm font-black transition ${
-        active ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-600"
-      }`}
-    >
+    <button type="button" onClick={onClick} className={`h-10 rounded-lg px-4 text-sm font-black transition ${active ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"}`}>
       {children}
     </button>
-  );
-}
-
-function ZoneCard({ zone }: { zone: DeliveryZone }) {
-  return (
-    <article className="rounded-lg border border-neutral-200 bg-[#fbfaf7] p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <span className="grid size-11 place-items-center rounded-lg bg-green-600 text-white">
-          <Bike size={21} />
-        </span>
-        <span className="text-2xl font-black">{formatCurrency(zone.price)}</span>
-      </div>
-      <h3 className="text-xl font-black">{zone.name}</h3>
-      <p className="mt-2 leading-7 text-neutral-600">{zone.description}</p>
-      <div className="mt-4 flex items-center justify-between rounded-lg bg-white px-3 py-2 text-sm font-black">
-        <span>{zone.eta}</span>
-        <ChevronRight size={18} />
-      </div>
-    </article>
   );
 }

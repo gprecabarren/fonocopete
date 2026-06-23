@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Fonocopete | Delivery de botilleria",
-  description: "Catalogo online con pedidos por WhatsApp para botilleria.",
+  title: "Fonocopete MAVERIK | Delivery de botilleria",
+  description: "Catalogo online de Fonocopete MAVERIK con pedidos por WhatsApp.",
 };
 
 export default function RootLayout({

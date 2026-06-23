@@ -8,7 +8,7 @@ export type Product = {
   imageUrl: string;
   volume: string;
   description: string;
-  stock: "available" | "low" | "hidden";
+  stock: "available" | "low" | "sold_out" | "hidden";
   featured?: boolean;
 };
 
@@ -51,4 +51,23 @@ export type OrderPayload = {
   total: number;
   zoneName: string;
   paymentLink: string;
+  paymentMethod: "mercadopago" | "transfer";
+};
+
+export type BankDetails = {
+  bank: string;
+  accountHolder: string;
+  accountType: string;
+  accountNumber: string;
+  rut: string;
+  email: string;
+};
+
+export type SiteSettings = {
+  businessName: string;
+  maintenanceMode: boolean;
+  maintenanceMessage: string;
+  whatsappNumber: string;
+  mercadoPagoLink: string;
+  bankDetails: BankDetails;
 };

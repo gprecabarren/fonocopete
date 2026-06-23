@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { mapProductRow, mapProductToRow } from "@/lib/product-mapper";
 import type { Product } from "@/lib/types";
+import { requireAdmin } from "@/lib/auth";
 
 const productSchema = z.object({
   id: z.string().min(1),
@@ -12,7 +13,7 @@ const productSchema = z.object({
   imageUrl: z.string(),
   volume: z.string(),
   description: z.string(),
-  stock: z.enum(["available", "low", "hidden"]),
+  stock: z.enum(["available", "low", "sold_out", "hidden"]),
   featured: z.boolean().optional(),
 });
 
@@ -37,6 +38,10 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!(await requireAdmin())) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
   const parsed = z.union([productSchema, z.array(productSchema)]).safeParse(await request.json());
 
   if (!parsed.success) {

@@ -26,6 +26,7 @@ const orderSchema = z.object({
   total: z.number().nonnegative(),
   zoneName: z.string(),
   paymentLink: z.string(),
+  paymentMethod: z.enum(["mercadopago", "transfer"]),
 });
 
 export async function POST(request: Request) {
