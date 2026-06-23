@@ -3,6 +3,9 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { defaultSettings } from "@/lib/settings";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import type { SiteSettings } from "@/lib/types";
+
+let demoSettings: SiteSettings = defaultSettings;
 
 const settingsSchema = z.object({
   businessName: z.string().min(1),
@@ -22,7 +25,7 @@ const settingsSchema = z.object({
 
 export async function GET() {
   const supabase = createServerSupabaseClient();
-  if (!supabase) return NextResponse.json({ settings: defaultSettings, source: "demo" });
+  if (!supabase) return NextResponse.json({ settings: demoSettings, source: "demo" });
 
   const { data, error } = await supabase.from("site_settings").select("value").eq("key", "main").single();
   if (error || !data?.value) return NextResponse.json({ settings: defaultSettings, source: "supabase" });
@@ -37,7 +40,10 @@ export async function PATCH(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Ajustes invalidos" }, { status: 400 });
 
   const supabase = createServerSupabaseClient();
-  if (!supabase) return NextResponse.json({ settings: parsed.data, source: "demo" });
+  if (!supabase) {
+    demoSettings = parsed.data;
+    return NextResponse.json({ settings: demoSettings, source: "demo" });
+  }
 
   const { error } = await supabase
     .from("site_settings")

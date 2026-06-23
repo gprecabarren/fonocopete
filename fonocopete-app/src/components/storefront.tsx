@@ -115,8 +115,11 @@ export function Storefront() {
       }
 
       if (settingsResponse.status === "fulfilled" && settingsResponse.value.ok) {
-        const data = (await settingsResponse.value.json()) as { settings: SiteSettings };
-        setSettings({ ...defaultSettings, ...data.settings });
+        const data = (await settingsResponse.value.json()) as { settings: SiteSettings; source: "demo" | "supabase" };
+        const hasLocalSettings = typeof window !== "undefined" && Boolean(window.localStorage.getItem(settingsStorageKey));
+        if (data.source === "supabase" || !hasLocalSettings) {
+          setSettings({ ...defaultSettings, ...data.settings });
+        }
       }
 
       if (sessionResponse.status === "fulfilled" && sessionResponse.value.ok) {
@@ -474,6 +477,37 @@ function readLocal<T>(key: string, fallback: T): T {
     window.localStorage.removeItem(key);
     return fallback;
   }
+}
+
+function resizeImage(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      const targetWidth = 900;
+      const targetHeight = 675;
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("No se pudo procesar la imagen"));
+        return;
+      }
+
+      const sourceRatio = image.width / image.height;
+      const targetRatio = targetWidth / targetHeight;
+      const sourceWidth = sourceRatio > targetRatio ? image.height * targetRatio : image.width;
+      const sourceHeight = sourceRatio > targetRatio ? image.height : image.width / targetRatio;
+      const sourceX = (image.width - sourceWidth) / 2;
+      const sourceY = (image.height - sourceHeight) / 2;
+
+      context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
+      resolve(canvas.toDataURL("image/jpeg", 0.82));
+    };
+    image.onerror = () => reject(new Error("Imagen invalida"));
+    image.src = URL.createObjectURL(file);
+  });
 }
 
 function Header({ businessName, cartCount }: { businessName: string; cartCount: number }) {
@@ -919,6 +953,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             <Input label="Precio" type="number" value={String(props.draft.price || "")} onChange={(value) => props.setDraft({ ...props.draft, price: Number(value) })} />
             <SelectCategory value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category })} />
             <Input label="Formato" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
+            <ImagePicker label="Cargar imagen desde PC" onImage={(imageUrl) => props.setDraft({ ...props.draft, imageUrl })} />
             <Input label="Foto URL" value={props.draft.imageUrl} onChange={(value) => props.setDraft({ ...props.draft, imageUrl: value })} />
             <Textarea label="Descripcion" value={props.draft.description} onChange={(value) => props.setDraft({ ...props.draft, description: value })} />
             <button className="flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
@@ -947,6 +982,14 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               <div className="grid min-w-0 gap-2">
                 <input value={product.name} onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, name: event.target.value }))} onBlur={() => void props.onSaveProduct(product)} className="rounded-md border border-neutral-300 px-3 py-2 font-black" />
                 <textarea value={product.description} onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, description: event.target.value }))} onBlur={() => void props.onSaveProduct(product)} className="min-h-16 rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+                <ImagePicker
+                  label="Cambiar imagen desde PC"
+                  onImage={(imageUrl) => {
+                    const nextProduct = { ...product, imageUrl };
+                    props.updateProduct(product.id, () => nextProduct);
+                    void props.onSaveProduct(nextProduct);
+                  }}
+                />
                 <input value={product.imageUrl} onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, imageUrl: event.target.value }))} onBlur={() => void props.onSaveProduct(product)} className="rounded-md border border-neutral-300 px-3 py-2 text-xs" />
               </div>
               <div className="grid gap-2">
@@ -996,10 +1039,13 @@ function SettingsAdmin({ settings, onSaveSettings }: { settings: SiteSettings; o
       <Input label="Nombre del negocio" value={draft.businessName} onChange={(value) => setDraft({ ...draft, businessName: value })} />
       <Input label="WhatsApp" value={draft.whatsappNumber} onChange={(value) => setDraft({ ...draft, whatsappNumber: value })} />
       <Input label="Link Mercado Pago" value={draft.mercadoPagoLink} onChange={(value) => setDraft({ ...draft, mercadoPagoLink: value })} />
-      <label className="flex items-center gap-2 rounded-lg bg-white px-3 py-3 text-sm font-black">
-        <input type="checkbox" checked={!draft.maintenanceMode} onChange={(event) => setDraft({ ...draft, maintenanceMode: !event.target.checked })} />
-        Activar sitio
+      <label className={`flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-black ${draft.maintenanceMode ? "bg-red-50 text-red-800" : "bg-green-50 text-green-800"}`}>
+        <input type="checkbox" checked={draft.maintenanceMode} onChange={(event) => setDraft({ ...draft, maintenanceMode: event.target.checked })} />
+        {draft.maintenanceMode ? "Modo mantenimiento activado" : "Sitio activo"}
       </label>
+      <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
+        Si activas mantenimiento, los clientes veran una pantalla cerrada y solo quedara disponible el login del administrador.
+      </p>
       <div className="lg:col-span-2">
         <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
       </div>
@@ -1019,14 +1065,26 @@ function SettingsAdmin({ settings, onSaveSettings }: { settings: SiteSettings; o
 
 function MaintenanceScreen({ message, onLogin }: { message: string; onLogin: () => void }) {
   return (
-    <main className="grid min-h-screen place-items-center bg-neutral-950 px-4 text-white">
-      <div className="w-full max-w-lg text-center">
-        <div className="mx-auto mb-5 grid size-16 place-items-center rounded-lg bg-amber-300 text-neutral-950">
-          <Wrench size={32} />
+    <main className="grid min-h-screen place-items-center bg-neutral-950 px-4 py-8 text-white">
+      <div className="grid w-full max-w-5xl overflow-hidden rounded-lg bg-white text-neutral-950 shadow-2xl lg:grid-cols-[1fr_420px]">
+        <div className="relative min-h-72 bg-neutral-900">
+          <img
+            src="https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1200&q=80"
+            alt=""
+            className="h-full w-full object-cover opacity-80"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/80 to-transparent" />
+          <div className="absolute bottom-5 left-5 right-5 text-white">
+            <div className="mb-4 grid size-14 place-items-center rounded-lg bg-amber-300 text-neutral-950">
+              <Wrench size={28} />
+            </div>
+            <h1 className="text-4xl font-black">Fonocopete MAVERIK</h1>
+            <p className="mt-3 max-w-xl text-lg leading-8 text-neutral-200">{message}</p>
+          </div>
         </div>
-        <h1 className="text-4xl font-black">Fonocopete MAVERIK</h1>
-        <p className="mt-4 text-lg leading-8 text-neutral-300">{message}</p>
-        <div className="mt-8 rounded-lg bg-white p-4 text-left text-neutral-950">
+        <div className="p-5">
+          <h2 className="mb-2 text-2xl font-black">Acceso administrador</h2>
+          <p className="mb-5 text-sm font-semibold text-neutral-600">El sitio esta cerrado para clientes. Inicia sesion para volver a activar la tienda.</p>
           <AdminLoginMini onLogin={onLogin} />
         </div>
       </div>
@@ -1143,6 +1201,39 @@ function Textarea(props: { label: string; value: string; onChange: (value: strin
     <label className="grid gap-1 text-sm font-bold">
       {props.label}
       <textarea value={props.value} onChange={(event) => props.onChange(event.target.value)} className="min-h-20 rounded-lg border border-neutral-300 px-3 py-2" />
+    </label>
+  );
+}
+
+function ImagePicker({ label, onImage }: { label: string; onImage: (imageUrl: string) => void }) {
+  const [status, setStatus] = useState("");
+
+  async function handleFile(file?: File) {
+    if (!file) return;
+    setStatus("Procesando imagen...");
+    try {
+      const imageUrl = await resizeImage(file);
+      onImage(imageUrl);
+      setStatus("Imagen cargada y ajustada a 4:3");
+    } catch {
+      setStatus("No se pudo cargar la imagen");
+    }
+  }
+
+  return (
+    <label className="grid gap-1 text-sm font-bold">
+      {label}
+      <span className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-400 bg-white px-3 text-sm font-black text-neutral-700">
+        <Upload size={17} />
+        Seleccionar archivo
+        <input
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          onChange={(event) => void handleFile(event.target.files?.[0])}
+        />
+      </span>
+      {status ? <span className="text-xs font-semibold text-neutral-500">{status}</span> : null}
     </label>
   );
 }
