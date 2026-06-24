@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
 import { z } from "zod";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
@@ -38,9 +38,9 @@ export async function POST(request: Request) {
 
   const order = parsed.data;
   const supabase = createServerSupabaseClient();
-  const resendKey = process.env.RESEND_API_KEY;
-  const ownerEmail = process.env.OWNER_EMAIL;
-  const fromEmail = process.env.FROM_EMAIL || "Fonocopete <onboarding@resend.dev>";
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+  const ownerEmail = process.env.OWNER_EMAIL || gmailUser;
   let orderId: string | null = null;
 
   if (supabase) {
@@ -82,15 +82,18 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!resendKey || !ownerEmail) {
+  if (!gmailUser || !gmailAppPassword || !ownerEmail) {
     return NextResponse.json({ ok: true, email: "skipped", orderId, source: supabase ? "supabase" : "demo" });
   }
 
-  const resend = new Resend(resendKey);
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: { user: gmailUser, pass: gmailAppPassword },
+  });
   const itemRows = order.items.map((item) => `${item.quantity}x ${item.name} - $${item.lineTotal}`).join("<br />");
 
-  await resend.emails.send({
-    from: fromEmail,
+  await transporter.sendMail({
+    from: `"Fonocopete MAVERIK" <${gmailUser}>`,
     to: ownerEmail,
     subject: `Nuevo pedido Fonocopete - ${order.customer.name}`,
     html: `
@@ -106,8 +109,8 @@ export async function POST(request: Request) {
     `,
   });
 
-  await resend.emails.send({
-    from: fromEmail,
+  await transporter.sendMail({
+    from: `"Fonocopete MAVERIK" <${gmailUser}>`,
     to: order.customer.email,
     subject: "Confirmacion de pedido Fonocopete",
     html: `

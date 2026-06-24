@@ -17,6 +17,7 @@ import {
   LogIn,
   LogOut,
   MapPin,
+  Mail,
   Menu,
   MessageCircle,
   Minus,
@@ -34,8 +35,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { categories, deliveryZones, faqs, initialProducts } from "@/lib/catalog";
-import { inferDemoZoneFromAddress } from "@/lib/delivery";
+import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa";
+import { categories, deliveryZones as initialDeliveryZones, faqs, initialProducts } from "@/lib/catalog";
+import { findZoneByAddress, findZoneByCoordinates } from "@/lib/delivery";
 import { formatCurrency, normalizeText } from "@/lib/format";
 import { buildWhatsAppUrl } from "@/lib/whatsapp";
 import { defaultSettings } from "@/lib/settings";
@@ -43,6 +45,7 @@ import type {
   CartItem,
   CategoryId,
   CustomerDetails,
+  DeliveryZone,
   OrderPayload,
   Product,
   SiteSettings,
@@ -58,7 +61,7 @@ const emptyCustomer: CustomerDetails = {
   email: "",
   address: "",
   manualAddress: false,
-  zoneId: deliveryZones[0].id,
+  zoneId: initialDeliveryZones[0].id,
   notes: "",
 };
 
@@ -86,13 +89,15 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   );
   const [draft, setDraft] = useState<Product>(productDraft);
   const [bulkText, setBulkText] = useState("");
-  const [adminView, setAdminView] = useState<"catalog" | "settings">("catalog");
+  const [adminView, setAdminView] = useState<"catalog" | "zones" | "settings">("catalog");
   const [productSource, setProductSource] = useState<"local" | "supabase">("local");
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(initialDeliveryZones);
+  const [zoneStatus, setZoneStatus] = useState("");
 
   useEffect(() => {
     if (productSource === "local") window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
@@ -104,10 +109,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
 
   useEffect(() => {
     async function boot() {
-      const [productResponse, settingsResponse, sessionResponse] = await Promise.allSettled([
+      const [productResponse, settingsResponse, sessionResponse, zonesResponse] = await Promise.allSettled([
         fetch("/api/products"),
         fetch("/api/settings"),
         fetch("/api/admin/session"),
+        fetch("/api/delivery-zones"),
       ]);
 
       if (productResponse.status === "fulfilled" && productResponse.value.ok) {
@@ -130,12 +136,21 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         const data = (await sessionResponse.value.json()) as { authenticated: boolean };
         setAdminAuthenticated(data.authenticated);
       }
+
+      if (zonesResponse.status === "fulfilled" && zonesResponse.value.ok) {
+        const data = (await zonesResponse.value.json()) as { zones: DeliveryZone[]; source: "demo" | "supabase" };
+        if (data.zones.length) {
+          setDeliveryZones(data.zones);
+          setCustomer((current) => ({ ...current, zoneId: data.zones[0].id }));
+        }
+      }
     }
 
     void boot();
   }, []);
 
-  const activeZone = deliveryZones.find((zone) => zone.id === customer.zoneId) ?? deliveryZones[0];
+  const activeZones = deliveryZones.filter((zone) => zone.active);
+  const activeZone = activeZones.find((zone) => zone.id === customer.zoneId) ?? activeZones[0] ?? initialDeliveryZones[0];
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
     return products.filter((product) => {
@@ -188,13 +203,35 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     setCheckoutError("");
   }
 
-  function detectZone() {
-    const zone = inferDemoZoneFromAddress(customer.address);
+  async function detectZone() {
+    setZoneStatus("Buscando direccion...");
+    let searchableAddress = customer.address;
+    let location: { lat: number; lng: number } | undefined;
+    try {
+      const response = await fetch(`/api/geocode?address=${encodeURIComponent(customer.address)}`);
+      if (response.ok) {
+        const data = (await response.json()) as {
+          formattedAddress: string;
+          searchableAddress: string;
+          location: { lat: number; lng: number };
+        };
+        searchableAddress = `${data.formattedAddress} ${data.searchableAddress}`;
+        location = data.location;
+        updateCustomer("address", data.formattedAddress);
+      }
+    } catch {
+      // Text matching remains available while Google Maps is not configured.
+    }
+    const zone =
+      (location ? findZoneByCoordinates(location, activeZones) : null) ||
+      findZoneByAddress(searchableAddress, activeZones);
     if (zone) {
       updateCustomer("zoneId", zone.id);
       updateCustomer("manualAddress", false);
+      setZoneStatus(`Zona detectada: ${zone.name}`);
     } else {
       updateCustomer("manualAddress", true);
+      setZoneStatus("No encontramos una zona automatica. Selecciona una manualmente.");
     }
   }
 
@@ -204,13 +241,13 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (!customer.name.trim()) return "Ingresa tu nombre.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo valido.";
     if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 digitos en el telefono.";
-    if (customer.address.trim().length < 3) return "Ingresa tu direccion.";
+    if (settings.deliveryEnabled && customer.address.trim().length < 3) return "Ingresa tu direccion.";
     return "";
   }
 
   function buildOrder(paymentMethod: OrderPayload["paymentMethod"]): OrderPayload {
     return {
-      customer,
+      customer: settings.deliveryEnabled ? customer : { ...customer, address: "Por coordinar", manualAddress: true },
       items: cartLines.map((item) => ({
         name: item.product.name,
         quantity: item.quantity,
@@ -220,7 +257,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       subtotal,
       delivery: deliveryPrice,
       total,
-      zoneName: customer.manualAddress ? `${activeZone.name} (manual)` : activeZone.name,
+      zoneName: settings.deliveryEnabled
+        ? customer.manualAddress
+          ? `${activeZone.name} (manual)`
+          : activeZone.name
+        : "Entrega por coordinar - sin cobro",
       paymentLink: settings.mercadoPagoLink,
       paymentMethod,
     };
@@ -251,12 +292,12 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       if (!response.ok) throw new Error("No se pudo registrar el pedido");
 
       if (paymentMethod === "mercadopago") window.open(settings.mercadoPagoLink, "_blank", "noopener,noreferrer");
-      window.open(buildWhatsAppUrl(order), "_blank", "noopener,noreferrer");
+      window.open(buildWhatsAppUrl(order, settings.whatsappNumber), "_blank", "noopener,noreferrer");
       setOrderStatus("sent");
       setCart([]);
       setShowPayment(false);
     } catch {
-      window.open(buildWhatsAppUrl(order), "_blank", "noopener,noreferrer");
+      window.open(buildWhatsAppUrl(order, settings.whatsappNumber), "_blank", "noopener,noreferrer");
       setOrderStatus("error");
     }
   }
@@ -399,6 +440,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           onDeleteProduct={deleteProduct}
           settings={settings}
           onSaveSettings={saveSettings}
+          deliveryZones={deliveryZones}
+          setDeliveryZones={setDeliveryZones}
         />
       </main>
     );
@@ -417,7 +460,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         />
       ) : null}
 
-      <Header businessName={settings.businessName} cartCount={cartCount} />
+      <Header settings={settings} cartCount={cartCount} />
+      <FloatingWhatsApp whatsappNumber={settings.whatsappNumber} />
 
       <section id="promociones" className="scroll-mt-20 bg-neutral-950 text-white">
         <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_0.78fr] lg:py-12">
@@ -472,10 +516,12 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           onCustomer={updateCustomer}
           onDetectZone={detectZone}
           deliveryEnabled={settings.deliveryEnabled}
+          deliveryZones={activeZones}
+          zoneStatus={zoneStatus}
         />
       </section>
 
-      <InfoSections />
+      <InfoSections settings={settings} />
     </main>
   );
 }
@@ -523,7 +569,7 @@ function resizeImage(file: File) {
   });
 }
 
-function Header({ businessName, cartCount }: { businessName: string; cartCount: number }) {
+function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: number }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const links = [
     { href: "#catalogo", label: "Catalogo" },
@@ -551,12 +597,13 @@ function Header({ businessName, cartCount }: { businessName: string; cartCount: 
             <Wine size={22} />
           </span>
           <span className="min-w-0">
-            <span className="block truncate text-base font-black uppercase leading-tight tracking-wide sm:text-lg">{businessName}</span>
+            <span className="block truncate text-base font-black uppercase leading-tight tracking-wide sm:text-lg">{settings.businessName}</span>
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Botilleria delivery</span>
           </span>
           </a>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <SocialLinks settings={settings} className="hidden lg:flex" />
           <Link href="/admin" className="action-button hidden h-11 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-black sm:inline-flex">
             <LogIn size={17} />
             Administrador
@@ -589,6 +636,48 @@ function Header({ businessName, cartCount }: { businessName: string; cartCount: 
         </nav>
       ) : null}
     </header>
+  );
+}
+
+function SocialLinks({ settings, className = "" }: { settings: SiteSettings; className?: string }) {
+  const whatsappUrl = `https://wa.me/${settings.whatsappNumber.replace(/\D/g, "")}`;
+  return (
+    <div className={`items-center gap-1 ${className}`}>
+      <SocialIcon href={settings.instagramUrl} label="Instagram"><FaInstagram size={18} /></SocialIcon>
+      <SocialIcon href={settings.facebookUrl} label="Facebook"><FaFacebookF size={17} /></SocialIcon>
+      <SocialIcon href={`mailto:${settings.contactEmail}`} label="Correo"><Mail size={18} /></SocialIcon>
+      <SocialIcon href={whatsappUrl} label="WhatsApp"><FaWhatsapp size={19} /></SocialIcon>
+    </div>
+  );
+}
+
+function SocialIcon({ href, label, children }: { href: string; label: string; children: React.ReactNode }) {
+  return (
+    <a
+      href={href}
+      target={href.startsWith("http") ? "_blank" : undefined}
+      rel={href.startsWith("http") ? "noreferrer" : undefined}
+      aria-label={label}
+      title={label}
+      className="action-button grid size-10 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-700 hover:border-red-500 hover:text-red-600"
+    >
+      {children}
+    </a>
+  );
+}
+
+function FloatingWhatsApp({ whatsappNumber }: { whatsappNumber: string }) {
+  return (
+    <a
+      href={`https://wa.me/${whatsappNumber.replace(/\D/g, "")}`}
+      target="_blank"
+      rel="noreferrer"
+      aria-label="Hablar por WhatsApp"
+      title="Hablar por WhatsApp"
+      className="action-button fixed bottom-5 left-3 z-40 grid size-12 place-items-center rounded-full border-2 border-white bg-green-600 text-white shadow-lg hover:bg-green-700 sm:left-5 sm:size-14"
+    >
+      <FaWhatsapp size={25} />
+    </a>
   );
 }
 
@@ -735,6 +824,8 @@ function CheckoutPanel(props: {
   onCustomer: (field: keyof CustomerDetails, value: string | boolean) => void;
   onDetectZone: () => void;
   deliveryEnabled: boolean;
+  deliveryZones: DeliveryZone[];
+  zoneStatus: string;
 }) {
   return (
     <aside id="checkout" className="min-w-0 lg:sticky lg:top-24 lg:self-start">
@@ -779,49 +870,63 @@ function CheckoutPanel(props: {
             ))
           )}
         </div>
-        {props.deliveryEnabled ? (
-          <>
         <div className="mt-4 grid gap-3">
           <Input label="Nombre" value={props.customer.name} onChange={(value) => props.onCustomer("name", value)} required />
           <div className="grid gap-3 sm:grid-cols-2">
             <Input label="Telefono" type="tel" inputMode="numeric" value={props.customer.phone} onChange={(value) => props.onCustomer("phone", value)} required />
             <Input label="Email" type="email" value={props.customer.email} onChange={(value) => props.onCustomer("email", value)} required />
           </div>
-          <label className="grid gap-1 text-sm font-bold">
-            Direccion
-            <div className="flex gap-2">
-              <input
-                value={props.customer.address}
-                onChange={(event) => props.onCustomer("address", event.target.value)}
-                className="h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 font-medium"
-                placeholder="Calle, numero, comuna"
-                required
-              />
-              <button type="button" onClick={props.onDetectZone} title="Calcular zona" className="action-button grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
-                <MapPin size={18} />
-              </button>
+          {props.deliveryEnabled ? (
+            <>
+              <label className="grid gap-1 text-sm font-bold">
+                Direccion
+                <div className="flex gap-2">
+                  <input
+                    value={props.customer.address}
+                    onChange={(event) => props.onCustomer("address", event.target.value)}
+                    className="h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 font-medium"
+                    placeholder="Calle, numero, comuna"
+                    required
+                  />
+                  <button type="button" onClick={props.onDetectZone} title="Buscar en Google Maps" className="action-button grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
+                    <MapPin size={18} />
+                  </button>
+                </div>
+              </label>
+              {props.zoneStatus ? <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{props.zoneStatus}</p> : null}
+              <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-sm font-bold">
+                <input type="checkbox" checked={props.customer.manualAddress} onChange={(event) => props.onCustomer("manualAddress", event.target.checked)} />
+                Direccion manual
+              </label>
+              <label className="grid gap-1 text-sm font-bold">
+                Zona de despacho
+                <select value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
+                  {props.deliveryZones.map((zone) => (
+                    <option key={zone.id} value={zone.id}>
+                      {zone.name} - {formatCurrency(zone.price)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+              <p className="font-black text-green-900">Despacho sin calculo automatico</p>
+              <p className="mt-1 text-sm text-green-800">La entrega y direccion se coordinaran directamente por WhatsApp. Costo de despacho: $0.</p>
             </div>
-          </label>
-          <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-sm font-bold">
-            <input type="checkbox" checked={props.customer.manualAddress} onChange={(event) => props.onCustomer("manualAddress", event.target.checked)} />
-            Direccion manual
-          </label>
-          <label className="grid gap-1 text-sm font-bold">
-            Zona de despacho
-            <select value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
-              {deliveryZones.map((zone) => (
-                <option key={zone.id} value={zone.id}>
-                  {zone.name} - {formatCurrency(zone.price)}
-                </option>
-              ))}
-            </select>
-          </label>
+          )}
           <label className="grid gap-1 text-sm font-bold">
             Notas
             <textarea value={props.customer.notes} onChange={(event) => props.onCustomer("notes", event.target.value)} className="min-h-20 rounded-lg border border-neutral-300 px-3 py-2 font-medium" />
           </label>
         </div>
-        <OrderTotals subtotal={props.subtotal} delivery={props.deliveryPrice} total={props.total} zone={props.activeZone} />
+        <OrderTotals
+          subtotal={props.subtotal}
+          delivery={props.deliveryPrice}
+          total={props.total}
+          zone={props.activeZone}
+          deliveryEnabled={props.deliveryEnabled}
+        />
         {props.checkoutError ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{props.checkoutError}</p> : null}
         <button type="submit" className="action-button mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-red-600 text-sm font-black text-white hover:bg-red-700">
           <CreditCard size={18} />
@@ -829,21 +934,6 @@ function CheckoutPanel(props: {
         </button>
         {props.orderStatus === "sent" ? <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-bold text-green-800">Pedido registrado.</p> : null}
         {props.orderStatus === "error" ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">Hubo un problema registrando el pedido.</p> : null}
-          </>
-        ) : (
-          <div className="mt-4">
-            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
-              <p className="font-black text-amber-950">Pedidos y envios temporalmente pausados</p>
-              <p className="mt-1 text-sm leading-6 text-amber-900">
-                Puedes armar y revisar tu carrito, pero por ahora no se puede finalizar la compra.
-              </p>
-            </div>
-            <div className="mt-3 flex items-center justify-between rounded-lg bg-neutral-100 p-4 text-lg font-black">
-              <span>Subtotal del carrito</span>
-              <span>{formatCurrency(props.subtotal)}</span>
-            </div>
-          </div>
-        )}
       </form>
     </aside>
   );
@@ -939,14 +1029,16 @@ function AdminPanel(props: {
   bulkText: string;
   setBulkText: (value: string) => void;
   importBulkProducts: () => Promise<void>;
-  adminView: "catalog" | "settings";
-  setAdminView: (value: "catalog" | "settings") => void;
+  adminView: "catalog" | "zones" | "settings";
+  setAdminView: (value: "catalog" | "zones" | "settings") => void;
   productSource: "local" | "supabase";
   syncStatus: "idle" | "syncing" | "saved" | "error";
   onSaveProduct: (product: Product) => Promise<void>;
   onDeleteProduct: (productId: string) => Promise<void>;
   settings: SiteSettings;
   onSaveSettings: (settings: SiteSettings) => Promise<void>;
+  deliveryZones: DeliveryZone[];
+  setDeliveryZones: (zones: DeliveryZone[]) => void;
 }) {
   const [login, setLogin] = useState({ username: "bodegon", password: "" });
   const [loginError, setLoginError] = useState("");
@@ -1016,6 +1108,7 @@ function AdminPanel(props: {
           </div>
           <div className="flex flex-wrap gap-2">
             <SegmentButton active={props.adminView === "catalog"} onClick={() => props.setAdminView("catalog")}>Catalogo</SegmentButton>
+            <SegmentButton active={props.adminView === "zones"} onClick={() => props.setAdminView("zones")}>Zonas</SegmentButton>
             <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
             <button type="button" onClick={() => void logout()} className="flex h-10 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm font-black">
               <LogOut size={16} />
@@ -1025,6 +1118,8 @@ function AdminPanel(props: {
         </div>
         {props.adminView === "catalog" ? (
           <CatalogAdmin {...props} updateProduct={updateProduct} />
+        ) : props.adminView === "zones" ? (
+          <ZonesAdmin zones={props.deliveryZones} setZones={props.setDeliveryZones} />
         ) : (
           <SettingsAdmin
             key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}`}
@@ -1127,6 +1222,116 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   );
 }
 
+function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zones: DeliveryZone[]) => void }) {
+  const emptyZone: DeliveryZone = {
+    id: "",
+    name: "",
+    price: 0,
+    eta: "30-60 min",
+    description: "",
+    polygon: [],
+    matchTerms: [],
+    active: true,
+  };
+  const [draft, setDraft] = useState(emptyZone);
+  const [status, setStatus] = useState("");
+
+  async function saveZone(zone: DeliveryZone) {
+    setStatus("Guardando zona...");
+    const response = await fetch("/api/delivery-zones", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(zone),
+    });
+    if (!response.ok) {
+      setStatus("No se pudo guardar la zona.");
+      return;
+    }
+    const data = (await response.json()) as { zone: DeliveryZone };
+    setZones([data.zone, ...zones.filter((item) => item.id !== data.zone.id)]);
+    setDraft(emptyZone);
+    setStatus("Zona guardada.");
+  }
+
+  async function deleteZone(id: string) {
+    const response = await fetch(`/api/delivery-zones/${id}`, { method: "DELETE" });
+    if (response.ok) {
+      setZones(zones.filter((zone) => zone.id !== id));
+      setStatus("Zona eliminada.");
+    }
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!draft.name.trim() || !draft.matchTerms.length) return;
+          void saveZone({ ...draft, id: draft.id || crypto.randomUUID() });
+        }}
+        className="h-fit rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4"
+      >
+        <h3 className="mb-4 flex items-center gap-2 text-lg font-black"><MapPin size={18} /> Nueva zona</h3>
+        <div className="grid gap-3">
+          <Input label="Nombre" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
+          <Input label="Precio despacho" type="number" value={String(draft.price || "")} onChange={(value) => setDraft({ ...draft, price: Number(value) })} />
+          <Input label="Tiempo estimado" value={draft.eta} onChange={(eta) => setDraft({ ...draft, eta })} />
+          <Input
+            label="Comunas o palabras para detectar"
+            value={draft.matchTerms.join(", ")}
+            onChange={(value) => setDraft({ ...draft, matchTerms: value.split(",").map((term) => term.trim()).filter(Boolean) })}
+          />
+          <Textarea label="Descripcion" value={draft.description} onChange={(description) => setDraft({ ...draft, description })} />
+          <button className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
+            <Save size={18} /> Guardar zona
+          </button>
+          {status ? <p className="text-sm font-bold text-neutral-600">{status}</p> : null}
+        </div>
+      </form>
+      <div className="grid gap-3">
+        {zones.map((zone) => (
+          <div key={zone.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 md:grid-cols-[minmax(0,1fr)_140px]">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-black">{zone.name}</h3>
+                <span className={`rounded-md px-2 py-1 text-xs font-black ${zone.active ? "bg-green-100 text-green-800" : "bg-neutral-200 text-neutral-600"}`}>
+                  {zone.active ? "Activa" : "Oculta"}
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-neutral-600">{zone.description}</p>
+              <p className="mt-2 text-sm font-bold">{zone.matchTerms.join(", ")}</p>
+              <p className="mt-2 font-black text-red-600">{formatCurrency(zone.price)} · {zone.eta}</p>
+            </div>
+            <div className="grid content-start gap-2">
+              <button
+                type="button"
+                onClick={() => void saveZone({ ...zone, active: !zone.active })}
+                className="action-button h-10 rounded-lg border border-neutral-300 text-sm font-black"
+              >
+                {zone.active ? "Ocultar" : "Activar"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setDraft(zone)}
+                className="action-button h-10 rounded-lg bg-neutral-950 text-sm font-black text-white"
+              >
+                Editar
+              </button>
+              <button
+                type="button"
+                onClick={() => void deleteZone(zone.id)}
+                className="action-button h-10 rounded-lg bg-red-50 text-sm font-black text-red-700"
+              >
+                Eliminar
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SettingsAdmin({
   settings,
   onSaveSettings,
@@ -1145,6 +1350,9 @@ function SettingsAdmin({
     }} className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 lg:grid-cols-2">
       <Input label="Nombre del negocio" value={draft.businessName} onChange={(value) => setDraft({ ...draft, businessName: value })} />
       <Input label="WhatsApp" value={draft.whatsappNumber} onChange={(value) => setDraft({ ...draft, whatsappNumber: value })} />
+      <Input label="Correo de contacto" type="email" value={draft.contactEmail} onChange={(value) => setDraft({ ...draft, contactEmail: value })} />
+      <Input label="Instagram" value={draft.instagramUrl} onChange={(value) => setDraft({ ...draft, instagramUrl: value })} />
+      <Input label="Facebook" value={draft.facebookUrl} onChange={(value) => setDraft({ ...draft, facebookUrl: value })} />
       <Input label="Link Mercado Pago" value={draft.mercadoPagoLink} onChange={(value) => setDraft({ ...draft, mercadoPagoLink: value })} />
       <label className={`flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-black ${draft.maintenanceMode ? "bg-red-50 text-red-800" : "bg-green-50 text-green-800"}`}>
         <input type="checkbox" checked={draft.maintenanceMode} onChange={(event) => setDraft({ ...draft, maintenanceMode: event.target.checked })} />
@@ -1152,13 +1360,13 @@ function SettingsAdmin({
       </label>
       <label className={`flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-black ${draft.deliveryEnabled ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-900"}`}>
         <input type="checkbox" checked={draft.deliveryEnabled} onChange={(event) => setDraft({ ...draft, deliveryEnabled: event.target.checked })} />
-        {draft.deliveryEnabled ? "Pedidos y envios activados" : "Solo catalogo y carrito"}
+        {draft.deliveryEnabled ? "Calculo de despacho activado" : "Despacho sin direccion ni cobro"}
       </label>
       <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
         Si activas mantenimiento, los clientes veran una pantalla cerrada y solo quedara disponible el login del administrador.
       </p>
       <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
-        Si desactivas pedidos y envios, los clientes podran agregar productos y ver el subtotal, pero no ingresar datos ni finalizar la compra.
+        Si desactivas el calculo de despacho, se mantienen contacto, notas, pago y pedido. Solo se ocultan direccion, zona y costo de envio.
       </p>
       <div className="lg:col-span-2">
         <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
@@ -1240,7 +1448,7 @@ export function AdminLoginMini({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-function InfoSections() {
+function InfoSections({ settings }: { settings: SiteSettings }) {
   return (
     <footer className="bg-[#f7f4ef]">
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-2">
@@ -1268,6 +1476,18 @@ function InfoSections() {
             Beber alcohol en exceso es danino para la salud.
           </div>
         </section>
+      </div>
+      <div className="border-t border-neutral-200 bg-white">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div>
+            <p className="font-black">{settings.businessName}</p>
+            <a href={`mailto:${settings.contactEmail}`} className="text-sm font-semibold text-neutral-600 hover:text-red-600">{settings.contactEmail}</a>
+          </div>
+          <SocialLinks settings={settings} className="flex" />
+          <a href="https://www.minsal.cl/" target="_blank" rel="noreferrer" className="w-fit opacity-45 transition hover:opacity-75">
+            <img src="/minsal-logo.png" alt="Ministerio de Salud de Chile" className="h-12 w-12 object-contain" />
+          </a>
+        </div>
       </div>
     </footer>
   );
@@ -1375,7 +1595,19 @@ function SelectCategory(props: { value: CategoryId; onChange: (value: CategoryId
   );
 }
 
-function OrderTotals({ subtotal, delivery, total, zone }: { subtotal: number; delivery: number; total: number; zone: { name: string; eta: string } }) {
+function OrderTotals({
+  subtotal,
+  delivery,
+  total,
+  zone,
+  deliveryEnabled,
+}: {
+  subtotal: number;
+  delivery: number;
+  total: number;
+  zone: { name: string; eta: string };
+  deliveryEnabled: boolean;
+}) {
   return (
     <div className="mt-4 rounded-lg bg-neutral-100 p-4">
       <div className="flex items-center justify-between text-sm font-bold text-neutral-600">
@@ -1384,11 +1616,11 @@ function OrderTotals({ subtotal, delivery, total, zone }: { subtotal: number; de
       </div>
       <div className="mt-2 flex items-center justify-between text-sm font-bold text-neutral-600">
         <span>Delivery</span>
-        <span>{formatCurrency(delivery)}</span>
+        <span>{deliveryEnabled ? formatCurrency(delivery) : "Sin cobro"}</span>
       </div>
       <div className="mt-2 flex items-center justify-between text-xs font-black uppercase tracking-wide text-neutral-500">
-        <span>{zone.name}</span>
-        <span>{zone.eta}</span>
+        <span>{deliveryEnabled ? zone.name : "Por coordinar"}</span>
+        <span>{deliveryEnabled ? zone.eta : "WhatsApp"}</span>
       </div>
       <div className="mt-3 flex items-center justify-between border-t border-neutral-300 pt-3 text-xl font-black">
         <span>Total</span>

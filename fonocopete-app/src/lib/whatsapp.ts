@@ -27,8 +27,8 @@ export function buildWhatsAppMessage(order: OrderPayload) {
     .join("\n");
 }
 
-export function buildWhatsAppUrl(order: OrderPayload) {
+export function buildWhatsAppUrl(order: OrderPayload, configuredNumber?: string) {
   const fallbackNumber = "56912345678";
-  const phone = process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || fallbackNumber;
+  const phone = configuredNumber?.replace(/\D/g, "") || process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || fallbackNumber;
   return `https://wa.me/${phone}?text=${encodeURIComponent(buildWhatsAppMessage(order))}`;
 }

@@ -1,4 +1,3 @@
-import { deliveryZones } from "./catalog";
 import { normalizeText } from "./format";
 import type { DeliveryZone } from "./types";
 
@@ -20,23 +19,14 @@ export function pointInPolygon(point: { lat: number; lng: number }, polygon: Del
   return inside;
 }
 
-export function findZoneByCoordinates(point: { lat: number; lng: number }) {
-  return deliveryZones.find((zone) => pointInPolygon(point, zone.polygon));
+export function findZoneByCoordinates(point: { lat: number; lng: number }, zones: DeliveryZone[]) {
+  return zones.find((zone) => zone.active && zone.polygon.length > 2 && pointInPolygon(point, zone.polygon));
 }
 
-export function inferDemoZoneFromAddress(address: string) {
+export function findZoneByAddress(address: string, zones: DeliveryZone[]) {
   const value = normalizeText(address);
-
   if (!value) return null;
-  if (value.includes("centro") || value.includes("plaza") || value.includes("local")) {
-    return deliveryZones[0];
-  }
-  if (value.includes("providencia") || value.includes("nunoa") || value.includes("santiago")) {
-    return deliveryZones[1];
-  }
-  if (value.includes("maipu") || value.includes("florida") || value.includes("condes")) {
-    return deliveryZones[2];
-  }
-
-  return null;
+  return zones.find(
+    (zone) => zone.active && zone.matchTerms.some((term) => value.includes(normalizeText(term))),
+  ) || null;
 }

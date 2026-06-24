@@ -9,7 +9,10 @@ export const defaultSettings: SiteSettings = {
   deliveryEnabled: true,
   maintenanceMessage:
     "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Intentalo nuevamente mas tarde.",
-  whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56912345678",
+  whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56939351855",
+  contactEmail: "fonocopeteconcepcion.maverik@gmail.com",
+  instagramUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",
+  facebookUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",
   mercadoPagoLink: process.env.NEXT_PUBLIC_MERCADOPAGO_LINK || "https://www.mercadopago.cl/",
   bankDetails: {
     bank: "Banco de Chile",

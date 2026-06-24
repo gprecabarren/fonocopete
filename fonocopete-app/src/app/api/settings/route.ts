@@ -23,6 +23,9 @@ const settingsSchema = z.object({
   deliveryEnabled: z.boolean(),
   maintenanceMessage: z.string().min(1),
   whatsappNumber: z.string().min(5),
+  contactEmail: z.email(),
+  instagramUrl: z.url(),
+  facebookUrl: z.url(),
   mercadoPagoLink: z.string().min(1),
   bankDetails: z.object({
     bank: z.string().min(1),

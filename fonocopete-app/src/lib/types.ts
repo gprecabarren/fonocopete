@@ -19,6 +19,8 @@ export type DeliveryZone = {
   eta: string;
   description: string;
   polygon: Array<{ lat: number; lng: number }>;
+  matchTerms: string[];
+  active: boolean;
 };
 
 export type CartItem = {
@@ -69,6 +71,9 @@ export type SiteSettings = {
   deliveryEnabled: boolean;
   maintenanceMessage: string;
   whatsappNumber: string;
+  contactEmail: string;
+  instagramUrl: string;
+  facebookUrl: string;
   mercadoPagoLink: string;
   bankDetails: BankDetails;
 };
