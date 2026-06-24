@@ -4,6 +4,7 @@
 
 import {
   AlertTriangle,
+  ArrowLeft,
   BadgeCheck,
   Beer,
   Bike,
@@ -16,6 +17,7 @@ import {
   LogIn,
   LogOut,
   MapPin,
+  Menu,
   MessageCircle,
   Minus,
   Plus,
@@ -30,6 +32,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { categories, deliveryZones, faqs, initialProducts } from "@/lib/catalog";
 import { inferDemoZoneFromAddress } from "@/lib/delivery";
@@ -70,7 +73,7 @@ const productDraft: Product = {
   stock: "available",
 };
 
-export function Storefront() {
+export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [products, setProducts] = useState<Product[]>(() => readLocal(catalogStorageKey, initialProducts));
   const [settings, setSettings] = useState<SiteSettings>(() => readLocal(settingsStorageKey, defaultSettings));
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -89,6 +92,7 @@ export function Storefront() {
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [showPayment, setShowPayment] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
+  const [addedProductId, setAddedProductId] = useState<string | null>(null);
 
   useEffect(() => {
     if (productSource === "local") window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
@@ -150,7 +154,7 @@ export function Storefront() {
     })
     .filter(Boolean) as Array<CartItem & { product: Product; lineTotal: number }>;
   const subtotal = cartLines.reduce((sum, item) => sum + item.lineTotal, 0);
-  const deliveryPrice = subtotal > 0 ? activeZone.price : 0;
+  const deliveryPrice = settings.deliveryEnabled && subtotal > 0 ? activeZone.price : 0;
   const total = subtotal + deliveryPrice;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -167,6 +171,8 @@ export function Storefront() {
         ? current.map((item) => (item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item))
         : [...current, { productId: product.id, quantity: 1 }];
     });
+    setAddedProductId(product.id);
+    window.setTimeout(() => setAddedProductId((current) => (current === product.id ? null : current)), 900);
   }
 
   function updateQuantity(productId: string, delta: number) {
@@ -197,7 +203,7 @@ export function Storefront() {
     if (!cartLines.length) return "Agrega al menos un producto disponible.";
     if (!customer.name.trim()) return "Ingresa tu nombre.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo valido.";
-    if (!/^\+?\d[\d\s-]{7,}$/.test(customer.phone)) return "Ingresa un telefono valido.";
+    if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 digitos en el telefono.";
     if (customer.address.trim().length < 3) return "Ingresa tu direccion.";
     return "";
   }
@@ -362,12 +368,39 @@ export function Storefront() {
     }
   }
 
-  if (settings.maintenanceMode && !adminAuthenticated) {
+  if (mode === "store" && settings.maintenanceMode) {
     return (
       <MaintenanceScreen
         message={settings.maintenanceMessage}
-        onLogin={() => setAdminAuthenticated(true)}
       />
+    );
+  }
+
+  if (mode === "admin") {
+    return (
+      <main className="min-h-screen overflow-x-hidden bg-[#f7f4ef] text-neutral-950">
+        <AdminHeader businessName={settings.businessName} />
+        <AdminPanel
+          authenticated={adminAuthenticated}
+          setAuthenticated={setAdminAuthenticated}
+          products={products}
+          setProducts={setProducts}
+          draft={draft}
+          setDraft={setDraft}
+          onSubmit={addDraftProduct}
+          bulkText={bulkText}
+          setBulkText={setBulkText}
+          importBulkProducts={importBulkProducts}
+          adminView={adminView}
+          setAdminView={setAdminView}
+          productSource={productSource}
+          syncStatus={syncStatus}
+          onSaveProduct={persistProduct}
+          onDeleteProduct={deleteProduct}
+          settings={settings}
+          onSaveSettings={saveSettings}
+        />
+      </main>
     );
   }
 
@@ -386,7 +419,7 @@ export function Storefront() {
 
       <Header businessName={settings.businessName} cartCount={cartCount} />
 
-      <section className="bg-neutral-950 text-white">
+      <section id="promociones" className="scroll-mt-20 bg-neutral-950 text-white">
         <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_0.78fr] lg:py-12">
           <div className="flex min-w-0 flex-col justify-center">
             <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
@@ -407,7 +440,7 @@ export function Storefront() {
           </div>
           <div className="grid min-w-0 gap-4">
             {featuredProducts.map((product) => (
-              <FeaturedProduct key={product.id} product={product} onAdd={() => addToCart(product)} />
+              <FeaturedProduct key={product.id} product={product} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
             ))}
           </div>
         </div>
@@ -418,7 +451,7 @@ export function Storefront() {
           <CatalogToolbar query={query} setQuery={setQuery} activeCategory={activeCategory} setActiveCategory={setActiveCategory} />
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredProducts.map((product) => (
-              <ProductCard key={product.id} product={product} onAdd={() => addToCart(product)} />
+              <ProductCard key={product.id} product={product} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
             ))}
           </div>
         </div>
@@ -438,29 +471,9 @@ export function Storefront() {
           onQuantity={updateQuantity}
           onCustomer={updateCustomer}
           onDetectZone={detectZone}
+          deliveryEnabled={settings.deliveryEnabled}
         />
       </section>
-
-      <AdminPanel
-        authenticated={adminAuthenticated}
-        setAuthenticated={setAdminAuthenticated}
-        products={products}
-        setProducts={setProducts}
-        draft={draft}
-        setDraft={setDraft}
-        onSubmit={addDraftProduct}
-        bulkText={bulkText}
-        setBulkText={setBulkText}
-        importBulkProducts={importBulkProducts}
-        adminView={adminView}
-        setAdminView={setAdminView}
-        productSource={productSource}
-        syncStatus={syncStatus}
-        onSaveProduct={persistProduct}
-        onDeleteProduct={deleteProduct}
-        settings={settings}
-        onSaveSettings={saveSettings}
-      />
 
       <InfoSections />
     </main>
@@ -511,10 +524,29 @@ function resizeImage(file: File) {
 }
 
 function Header({ businessName, cartCount }: { businessName: string; cartCount: number }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const links = [
+    { href: "#catalogo", label: "Catalogo" },
+    { href: "#promociones", label: "Promociones" },
+    { href: "#checkout", label: "Mi pedido" },
+    { href: "#faq", label: "Preguntas frecuentes" },
+    { href: "#terminos", label: "Terminos" },
+  ];
+
   return (
     <header className="sticky top-0 z-30 border-b border-neutral-200/80 bg-[#f7f4ef]/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
-        <a href="#catalogo" className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((current) => !current)}
+            aria-expanded={menuOpen}
+            aria-label={menuOpen ? "Cerrar menu" : "Abrir menu"}
+            className="action-button grid size-11 shrink-0 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-950"
+          >
+            {menuOpen ? <X size={21} /> : <Menu size={21} />}
+          </button>
+          <a href="#catalogo" className="flex min-w-0 items-center gap-3">
           <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
             <Wine size={22} />
           </span>
@@ -522,17 +554,61 @@ function Header({ businessName, cartCount }: { businessName: string; cartCount: 
             <span className="block truncate text-base font-black uppercase leading-tight tracking-wide sm:text-lg">{businessName}</span>
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Botilleria delivery</span>
           </span>
-        </a>
-        <nav className="hidden items-center gap-5 text-sm font-semibold text-neutral-700 md:flex">
-          <a href="#catalogo">Catalogo</a>
-          <a href="#checkout">Pedido</a>
-          <a href="#admin">Admin</a>
-          <a href="#faq">FAQ</a>
+          </a>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link href="/admin" className="action-button hidden h-11 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-black sm:inline-flex">
+            <LogIn size={17} />
+            Administrador
+          </Link>
+          <a href="#checkout" className="action-button inline-flex h-11 items-center gap-2 rounded-lg bg-red-600 px-3 text-sm font-bold text-white sm:px-4">
+            <ShoppingCart size={18} />
+            <span>{cartCount}</span>
+          </a>
+        </div>
+      </div>
+      {menuOpen ? (
+        <nav className="absolute left-4 top-[72px] w-[min(330px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-neutral-200 bg-white p-2 shadow-2xl sm:left-6">
+          {links.map((link) => (
+            <a
+              key={link.href}
+              href={link.href}
+              onClick={() => setMenuOpen(false)}
+              className="flex h-11 items-center rounded-md px-3 text-sm font-black text-neutral-700 transition hover:bg-neutral-100 hover:text-red-600"
+            >
+              {link.label}
+            </a>
+          ))}
+          <Link
+            href="/admin"
+            className="mt-2 flex h-11 items-center gap-2 rounded-md bg-neutral-950 px-3 text-sm font-black text-white sm:hidden"
+          >
+            <LogIn size={17} />
+            Acceso administrador
+          </Link>
         </nav>
-        <a href="#checkout" className="inline-flex h-11 shrink-0 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-bold text-white">
-          <ShoppingCart size={18} />
-          <span>{cartCount}</span>
-        </a>
+      ) : null}
+    </header>
+  );
+}
+
+function AdminHeader({ businessName }: { businessName: string }) {
+  return (
+    <header className="border-b border-neutral-200 bg-white">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
+            <Settings size={21} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-lg font-black">{businessName}</p>
+            <p className="text-xs font-black uppercase text-red-600">Panel administrativo</p>
+          </div>
+        </div>
+        <Link href="/" className="action-button flex h-10 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-black">
+          <ArrowLeft size={17} />
+          <span className="hidden sm:inline">Volver a la tienda</span>
+        </Link>
       </div>
     </header>
   );
@@ -579,14 +655,16 @@ function CatalogToolbar(props: {
   );
 }
 
-function FeaturedProduct({ product, onAdd }: { product: Product; onAdd: () => void }) {
+function FeaturedProduct({ product, onAdd, added }: { product: Product; onAdd: () => void; added: boolean }) {
   const soldOut = product.stock === "sold_out";
   return (
     <button
       type="button"
       onClick={onAdd}
       disabled={soldOut}
-      className="grid min-w-0 grid-cols-[96px_minmax(0,1fr)] overflow-hidden rounded-lg border border-white/10 bg-white text-left text-neutral-950 shadow-2xl disabled:opacity-75 sm:grid-cols-[112px_minmax(0,1fr)]"
+      className={`action-button grid min-w-0 grid-cols-[96px_minmax(0,1fr)] overflow-hidden rounded-lg border bg-white text-left text-neutral-950 shadow-2xl disabled:opacity-75 sm:grid-cols-[112px_minmax(0,1fr)] ${
+        added ? "border-green-500 ring-4 ring-green-400/30" : "border-white/10"
+      }`}
     >
       <img src={product.imageUrl} alt="" className="h-full min-h-28 w-full object-cover" />
       <span className="min-w-0 p-4">
@@ -595,8 +673,8 @@ function FeaturedProduct({ product, onAdd }: { product: Product; onAdd: () => vo
         <span className="mt-1 block text-sm text-neutral-600">{product.volume}</span>
         <span className="mt-3 flex items-center justify-between gap-2">
           <span className="text-xl font-black sm:text-2xl">{formatCurrency(product.price)}</span>
-          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
-            <Plus size={19} />
+          <span className={`grid size-10 shrink-0 place-items-center rounded-lg text-white transition ${added ? "bg-green-600" : "bg-neutral-950"}`}>
+            {added ? <Check size={19} /> : <Plus size={19} />}
           </span>
         </span>
       </span>
@@ -604,7 +682,7 @@ function FeaturedProduct({ product, onAdd }: { product: Product; onAdd: () => vo
   );
 }
 
-function ProductCard({ product, onAdd }: { product: Product; onAdd: () => void }) {
+function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () => void; added: boolean }) {
   const soldOut = product.stock === "sold_out";
   return (
     <article className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
@@ -629,10 +707,12 @@ function ProductCard({ product, onAdd }: { product: Product; onAdd: () => void }
           type="button"
           onClick={onAdd}
           disabled={soldOut}
-          className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white transition hover:bg-red-600 disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-600"
+          className={`action-button mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-600 ${
+            added ? "bg-green-600" : "bg-neutral-950 hover:bg-red-600"
+          }`}
         >
-          <Plus size={18} />
-          {soldOut ? "Agotado" : "Agregar"}
+          {added ? <Check size={18} /> : <Plus size={18} />}
+          {soldOut ? "Agotado" : added ? "Agregado" : "Agregar"}
         </button>
       </div>
     </article>
@@ -654,6 +734,7 @@ function CheckoutPanel(props: {
   onQuantity: (productId: string, delta: number) => void;
   onCustomer: (field: keyof CustomerDetails, value: string | boolean) => void;
   onDetectZone: () => void;
+  deliveryEnabled: boolean;
 }) {
   return (
     <aside id="checkout" className="min-w-0 lg:sticky lg:top-24 lg:self-start">
@@ -698,10 +779,12 @@ function CheckoutPanel(props: {
             ))
           )}
         </div>
+        {props.deliveryEnabled ? (
+          <>
         <div className="mt-4 grid gap-3">
           <Input label="Nombre" value={props.customer.name} onChange={(value) => props.onCustomer("name", value)} required />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Input label="Telefono" value={props.customer.phone} onChange={(value) => props.onCustomer("phone", value)} required />
+            <Input label="Telefono" type="tel" inputMode="numeric" value={props.customer.phone} onChange={(value) => props.onCustomer("phone", value)} required />
             <Input label="Email" type="email" value={props.customer.email} onChange={(value) => props.onCustomer("email", value)} required />
           </div>
           <label className="grid gap-1 text-sm font-bold">
@@ -714,7 +797,7 @@ function CheckoutPanel(props: {
                 placeholder="Calle, numero, comuna"
                 required
               />
-              <button type="button" onClick={props.onDetectZone} title="Calcular zona" className="grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
+              <button type="button" onClick={props.onDetectZone} title="Calcular zona" className="action-button grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
                 <MapPin size={18} />
               </button>
             </div>
@@ -740,12 +823,27 @@ function CheckoutPanel(props: {
         </div>
         <OrderTotals subtotal={props.subtotal} delivery={props.deliveryPrice} total={props.total} zone={props.activeZone} />
         {props.checkoutError ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{props.checkoutError}</p> : null}
-        <button type="submit" className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-red-600 text-sm font-black text-white hover:bg-red-700">
+        <button type="submit" className="action-button mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-red-600 text-sm font-black text-white hover:bg-red-700">
           <CreditCard size={18} />
           Completar Pago
         </button>
         {props.orderStatus === "sent" ? <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-bold text-green-800">Pedido registrado.</p> : null}
         {props.orderStatus === "error" ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">Hubo un problema registrando el pedido.</p> : null}
+          </>
+        ) : (
+          <div className="mt-4">
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+              <p className="font-black text-amber-950">Pedidos y envios temporalmente pausados</p>
+              <p className="mt-1 text-sm leading-6 text-amber-900">
+                Puedes armar y revisar tu carrito, pero por ahora no se puede finalizar la compra.
+              </p>
+            </div>
+            <div className="mt-3 flex items-center justify-between rounded-lg bg-neutral-100 p-4 text-lg font-black">
+              <span>Subtotal del carrito</span>
+              <span>{formatCurrency(props.subtotal)}</span>
+            </div>
+          </div>
+        )}
       </form>
     </aside>
   );
@@ -929,9 +1027,10 @@ function AdminPanel(props: {
           <CatalogAdmin {...props} updateProduct={updateProduct} />
         ) : (
           <SettingsAdmin
-            key={`${props.settings.businessName}-${props.settings.maintenanceMode}`}
+            key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}`}
             settings={props.settings}
             onSaveSettings={props.onSaveSettings}
+            syncStatus={props.syncStatus}
           />
         )}
       </div>
@@ -1028,7 +1127,15 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   );
 }
 
-function SettingsAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSaveSettings: (settings: SiteSettings) => Promise<void> }) {
+function SettingsAdmin({
+  settings,
+  onSaveSettings,
+  syncStatus,
+}: {
+  settings: SiteSettings;
+  onSaveSettings: (settings: SiteSettings) => Promise<void>;
+  syncStatus: "idle" | "syncing" | "saved" | "error";
+}) {
   const [draft, setDraft] = useState(settings);
 
   return (
@@ -1043,8 +1150,15 @@ function SettingsAdmin({ settings, onSaveSettings }: { settings: SiteSettings; o
         <input type="checkbox" checked={draft.maintenanceMode} onChange={(event) => setDraft({ ...draft, maintenanceMode: event.target.checked })} />
         {draft.maintenanceMode ? "Modo mantenimiento activado" : "Sitio activo"}
       </label>
+      <label className={`flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-black ${draft.deliveryEnabled ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-900"}`}>
+        <input type="checkbox" checked={draft.deliveryEnabled} onChange={(event) => setDraft({ ...draft, deliveryEnabled: event.target.checked })} />
+        {draft.deliveryEnabled ? "Pedidos y envios activados" : "Solo catalogo y carrito"}
+      </label>
       <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
         Si activas mantenimiento, los clientes veran una pantalla cerrada y solo quedara disponible el login del administrador.
+      </p>
+      <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
+        Si desactivas pedidos y envios, los clientes podran agregar productos y ver el subtotal, pero no ingresar datos ni finalizar la compra.
       </p>
       <div className="lg:col-span-2">
         <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
@@ -1055,15 +1169,20 @@ function SettingsAdmin({ settings, onSaveSettings }: { settings: SiteSettings; o
       <Input label="Numero de cuenta" value={draft.bankDetails.accountNumber} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountNumber: value } })} />
       <Input label="RUT" value={draft.bankDetails.rut} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, rut: value } })} />
       <Input label="Correo pagos" type="email" value={draft.bankDetails.email} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, email: value } })} />
-      <button className="flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white lg:col-span-2">
-        <Save size={18} />
-        Guardar ajustes
+      <button
+        disabled={syncStatus === "syncing"}
+        className={`action-button flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-black text-white disabled:cursor-wait lg:col-span-2 ${
+          syncStatus === "saved" ? "bg-green-600" : syncStatus === "error" ? "bg-red-700" : "bg-neutral-950"
+        }`}
+      >
+        {syncStatus === "saved" ? <Check size={18} /> : <Save size={18} />}
+        {syncStatus === "syncing" ? "Guardando..." : syncStatus === "saved" ? "Ajustes guardados" : syncStatus === "error" ? "Reintentar guardado" : "Guardar ajustes"}
       </button>
     </form>
   );
 }
 
-function MaintenanceScreen({ message, onLogin }: { message: string; onLogin: () => void }) {
+function MaintenanceScreen({ message }: { message: string }) {
   return (
     <main className="grid min-h-screen place-items-center bg-neutral-950 px-4 py-8 text-white">
       <div className="grid w-full max-w-5xl overflow-hidden rounded-lg bg-white text-neutral-950 shadow-2xl lg:grid-cols-[1fr_420px]">
@@ -1085,14 +1204,17 @@ function MaintenanceScreen({ message, onLogin }: { message: string; onLogin: () 
         <div className="p-5">
           <h2 className="mb-2 text-2xl font-black">Acceso administrador</h2>
           <p className="mb-5 text-sm font-semibold text-neutral-600">El sitio esta cerrado para clientes. Inicia sesion para volver a activar la tienda.</p>
-          <AdminLoginMini onLogin={onLogin} />
+          <Link href="/admin" className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
+            <LogIn size={18} />
+            Iniciar sesion
+          </Link>
         </div>
       </div>
     </main>
   );
 }
 
-function AdminLoginMini({ onLogin }: { onLogin: () => void }) {
+export function AdminLoginMini({ onLogin }: { onLogin: () => void }) {
   const [login, setLogin] = useState({ username: "bodegon", password: "" });
   const [error, setError] = useState("");
 
@@ -1187,11 +1309,11 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   );
 }
 
-function Input(props: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean }) {
+function Input(props: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"] }) {
   return (
     <label className="grid gap-1 text-sm font-bold">
       {props.label}
-      <input type={props.type || "text"} value={props.value} onChange={(event) => props.onChange(event.target.value)} className="h-11 min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-medium" required={props.required} />
+      <input type={props.type || "text"} inputMode={props.inputMode} value={props.value} onChange={(event) => props.onChange(event.target.value)} className="h-11 min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-medium" required={props.required} />
     </label>
   );
 }

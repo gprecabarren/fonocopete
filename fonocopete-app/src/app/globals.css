@@ -25,6 +25,29 @@ textarea {
   outline-color: #ef4444;
 }
 
+button {
+  transition:
+    transform 140ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+button:not(:disabled):active,
+.action-button:active {
+  transform: translateY(1px) scale(0.97);
+}
+
+.action-button {
+  transition:
+    transform 140ms ease,
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease;
+}
+
 html {
   scroll-behavior: smooth;
 }

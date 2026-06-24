@@ -20,6 +20,7 @@ function withRuntimeOverrides(settings: SiteSettings) {
 const settingsSchema = z.object({
   businessName: z.string().min(1),
   maintenanceMode: z.boolean(),
+  deliveryEnabled: z.boolean(),
   maintenanceMessage: z.string().min(1),
   whatsappNumber: z.string().min(5),
   mercadoPagoLink: z.string().min(1),

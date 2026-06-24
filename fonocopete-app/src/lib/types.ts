@@ -66,6 +66,7 @@ export type BankDetails = {
 export type SiteSettings = {
   businessName: string;
   maintenanceMode: boolean;
+  deliveryEnabled: boolean;
   maintenanceMessage: string;
   whatsappNumber: string;
   mercadoPagoLink: string;

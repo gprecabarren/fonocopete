@@ -6,6 +6,7 @@ const forceMaintenance =
 export const defaultSettings: SiteSettings = {
   businessName: "Fonocopete MAVERIK",
   maintenanceMode: forceMaintenance,
+  deliveryEnabled: true,
   maintenanceMessage:
     "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Intentalo nuevamente mas tarde.",
   whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56912345678",

@@ -6,7 +6,7 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 const orderSchema = z.object({
   customer: z.object({
     name: z.string().min(1),
-    phone: z.string().min(5),
+    phone: z.string().refine((value) => value.replace(/\D/g, "").length >= 3),
     email: z.email(),
     address: z.string().min(3),
     manualAddress: z.boolean(),
