@@ -603,7 +603,6 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
           </a>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <SocialLinks settings={settings} className="hidden lg:flex" />
           <Link href="/admin" className="action-button hidden h-11 items-center gap-2 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-black sm:inline-flex">
             <LogIn size={17} />
             Administrador
@@ -612,6 +611,12 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
             <ShoppingCart size={18} />
             <span>{cartCount}</span>
           </a>
+        </div>
+      </div>
+      <div className="border-t border-neutral-200/70 bg-white/80">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
+          <span className="text-xs font-black uppercase text-neutral-500">Encuentranos</span>
+          <SocialLinks settings={settings} className="flex" />
         </div>
       </div>
       {menuOpen ? (
@@ -894,6 +899,9 @@ function CheckoutPanel(props: {
                 </div>
               </label>
               {props.zoneStatus ? <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{props.zoneStatus}</p> : null}
+              <p className="text-xs font-semibold text-neutral-500">
+                Busqueda de direccion por <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a>.
+              </p>
               <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-sm font-bold">
                 <input type="checkbox" checked={props.customer.manualAddress} onChange={(event) => props.onCustomer("manualAddress", event.target.checked)} />
                 Direccion manual
@@ -1478,11 +1486,7 @@ function InfoSections({ settings }: { settings: SiteSettings }) {
         </section>
       </div>
       <div className="border-t border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <div>
-            <p className="font-black">{settings.businessName}</p>
-            <a href={`mailto:${settings.contactEmail}`} className="text-sm font-semibold text-neutral-600 hover:text-red-600">{settings.contactEmail}</a>
-          </div>
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-6 sm:px-6">
           <SocialLinks settings={settings} className="flex" />
           <a href="https://www.minsal.cl/" target="_blank" rel="noreferrer" className="w-fit opacity-45 transition hover:opacity-75">
             <img src="/minsal-logo.png" alt="Ministerio de Salud de Chile" className="h-12 w-12 object-contain" />
