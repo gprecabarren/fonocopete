@@ -27,6 +27,11 @@ const settingsSchema = z.object({
   instagramUrl: z.url(),
   facebookUrl: z.url(),
   mercadoPagoLink: z.string().min(1),
+  faqs: z.array(z.object({
+    id: z.string().min(1),
+    question: z.string().min(1),
+    answer: z.string().min(1),
+  })),
   bankDetails: z.object({
     bank: z.string().min(1),
     accountHolder: z.string().min(1),

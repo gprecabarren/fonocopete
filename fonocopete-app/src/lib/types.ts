@@ -33,6 +33,8 @@ export type CustomerDetails = {
   phone: string;
   email: string;
   address: string;
+  city: string;
+  addressExtra: string;
   manualAddress: boolean;
   zoneId: string;
   notes: string;
@@ -53,7 +55,35 @@ export type OrderPayload = {
   total: number;
   zoneName: string;
   paymentLink: string;
-  paymentMethod: "mercadopago" | "transfer";
+  paymentMethod: "cash_on_delivery" | "mercadopago" | "transfer";
+  orderNumber?: string;
+};
+
+export type SavedOrder = {
+  id: string;
+  orderNumber: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  address: string;
+  city: string;
+  addressExtra: string;
+  zoneName: string;
+  subtotal: number;
+  delivery: number;
+  total: number;
+  paymentMethod: OrderPayload["paymentMethod"];
+  paymentStatus: string;
+  fulfillmentStatus: string;
+  notes: string;
+  createdAt: string;
+  items: OrderLine[];
+};
+
+export type FaqItem = {
+  id: string;
+  question: string;
+  answer: string;
 };
 
 export type BankDetails = {
@@ -75,5 +105,6 @@ export type SiteSettings = {
   instagramUrl: string;
   facebookUrl: string;
   mercadoPagoLink: string;
+  faqs: FaqItem[];
   bankDetails: BankDetails;
 };

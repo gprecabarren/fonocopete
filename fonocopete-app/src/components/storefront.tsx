@@ -13,7 +13,6 @@ import {
   CreditCard,
   Eye,
   EyeOff,
-  Landmark,
   LogIn,
   LogOut,
   MapPin,
@@ -36,18 +35,21 @@ import {
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa";
-import { categories, deliveryZones as initialDeliveryZones, faqs, initialProducts } from "@/lib/catalog";
+import { SiMercadopago } from "react-icons/si";
+import { categories, deliveryZones as initialDeliveryZones, initialProducts } from "@/lib/catalog";
 import { findZoneByAddress, findZoneByCoordinates } from "@/lib/delivery";
 import { formatCurrency, normalizeText } from "@/lib/format";
-import { buildWhatsAppUrl } from "@/lib/whatsapp";
+import { buildWhatsAppUrl, normalizeChilePhone } from "@/lib/whatsapp";
 import { defaultSettings } from "@/lib/settings";
 import type {
   CartItem,
   CategoryId,
   CustomerDetails,
   DeliveryZone,
+  FaqItem,
   OrderPayload,
   Product,
+  SavedOrder,
   SiteSettings,
 } from "@/lib/types";
 
@@ -60,6 +62,8 @@ const emptyCustomer: CustomerDetails = {
   phone: "",
   email: "",
   address: "",
+  city: "",
+  addressExtra: "",
   manualAddress: false,
   zoneId: initialDeliveryZones[0].id,
   notes: "",
@@ -89,7 +93,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   );
   const [draft, setDraft] = useState<Product>(productDraft);
   const [bulkText, setBulkText] = useState("");
-  const [adminView, setAdminView] = useState<"catalog" | "zones" | "settings">("catalog");
+  const [adminView, setAdminView] = useState<"orders" | "catalog" | "zones" | "faqs" | "settings">("orders");
   const [productSource, setProductSource] = useState<"local" | "supabase">("local");
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
@@ -98,6 +102,14 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
   const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(initialDeliveryZones);
   const [zoneStatus, setZoneStatus] = useState("");
+  const [addressResults, setAddressResults] = useState<Array<{
+    formattedAddress: string;
+    city: string;
+    searchableAddress: string;
+    location: { lat: number; lng: number };
+  }>>([]);
+  const [orders, setOrders] = useState<SavedOrder[]>([]);
+  const [registeredOrder, setRegisteredOrder] = useState<{ id: string; orderNumber: string } | null>(null);
 
   useEffect(() => {
     if (productSource === "local") window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
@@ -135,6 +147,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       if (sessionResponse.status === "fulfilled" && sessionResponse.value.ok) {
         const data = (await sessionResponse.value.json()) as { authenticated: boolean };
         setAdminAuthenticated(data.authenticated);
+        if (data.authenticated) void loadOrders();
       }
 
       if (zonesResponse.status === "fulfilled" && zonesResponse.value.ok) {
@@ -148,6 +161,13 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
 
     void boot();
   }, []);
+
+  async function loadOrders() {
+    const response = await fetch("/api/orders");
+    if (!response.ok) return;
+    const data = (await response.json()) as { orders: SavedOrder[] };
+    setOrders(data.orders);
+  }
 
   const activeZones = deliveryZones.filter((zone) => zone.active);
   const activeZone = activeZones.find((zone) => zone.id === customer.zoneId) ?? activeZones[0] ?? initialDeliveryZones[0];
@@ -205,33 +225,48 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
 
   async function detectZone() {
     setZoneStatus("Buscando direccion...");
-    let searchableAddress = customer.address;
-    let location: { lat: number; lng: number } | undefined;
     try {
       const response = await fetch(`/api/geocode?address=${encodeURIComponent(customer.address)}`);
       if (response.ok) {
         const data = (await response.json()) as {
-          formattedAddress: string;
-          searchableAddress: string;
-          location: { lat: number; lng: number };
+          results: Array<{
+            formattedAddress: string;
+            city: string;
+            searchableAddress: string;
+            location: { lat: number; lng: number };
+          }>;
         };
-        searchableAddress = `${data.formattedAddress} ${data.searchableAddress}`;
-        location = data.location;
-        updateCustomer("address", data.formattedAddress);
+        setAddressResults(data.results);
+        setZoneStatus(data.results.length ? "Selecciona la direccion correcta." : "No encontramos coincidencias.");
+        return;
       }
     } catch {
-      // Text matching remains available while Google Maps is not configured.
+      setAddressResults([]);
     }
+    setZoneStatus("No encontramos coincidencias. Prueba con direccion manual.");
+  }
+
+  function selectAddress(result: {
+    formattedAddress: string;
+    city: string;
+    searchableAddress: string;
+    location: { lat: number; lng: number };
+  }) {
     const zone =
-      (location ? findZoneByCoordinates(location, activeZones) : null) ||
-      findZoneByAddress(searchableAddress, activeZones);
+      findZoneByCoordinates(result.location, activeZones) ||
+      findZoneByAddress(`${result.formattedAddress} ${result.searchableAddress}`, activeZones);
+    setCustomer((current) => ({
+      ...current,
+      address: result.formattedAddress,
+      city: result.city,
+      zoneId: zone?.id || current.zoneId,
+      manualAddress: false,
+    }));
+    setAddressResults([]);
     if (zone) {
-      updateCustomer("zoneId", zone.id);
-      updateCustomer("manualAddress", false);
       setZoneStatus(`Zona detectada: ${zone.name}`);
     } else {
-      updateCustomer("manualAddress", true);
-      setZoneStatus("No encontramos una zona automatica. Selecciona una manualmente.");
+      setZoneStatus("Direccion encontrada, pero la zona requiere confirmacion.");
     }
   }
 
@@ -241,7 +276,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (!customer.name.trim()) return "Ingresa tu nombre.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo valido.";
     if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 digitos en el telefono.";
-    if (settings.deliveryEnabled && customer.address.trim().length < 3) return "Ingresa tu direccion.";
+    if (settings.deliveryEnabled && customer.address.trim().length < 3) return "Ingresa tu dirección.";
+    if (settings.deliveryEnabled && customer.manualAddress && customer.city.trim().length < 2) return "Ingresa la ciudad.";
     return "";
   }
 
@@ -274,7 +310,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (!error) setShowPayment(true);
   }
 
-  async function completeOrder(paymentMethod: OrderPayload["paymentMethod"]) {
+  async function completeOrder(
+    paymentMethod: OrderPayload["paymentMethod"],
+    purpose: "order" | "mercadopago" | "transfer",
+    notifyWhatsApp: boolean,
+  ) {
     const error = validateCheckout();
     if (error) {
       setCheckoutError(error);
@@ -282,22 +322,31 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     }
 
     setOrderStatus("sending");
+    const whatsappWindow = notifyWhatsApp ? window.open("about:blank", "_blank") : null;
     const order = buildOrder(paymentMethod);
     try {
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(order),
-      });
-      if (!response.ok) throw new Error("No se pudo registrar el pedido");
-
-      if (paymentMethod === "mercadopago") window.open(settings.mercadoPagoLink, "_blank", "noopener,noreferrer");
-      window.open(buildWhatsAppUrl(order, settings.whatsappNumber), "_blank", "noopener,noreferrer");
+      let saved = registeredOrder;
+      if (!saved) {
+        const response = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(order),
+        });
+        if (!response.ok) throw new Error("No se pudo registrar el pedido");
+        const data = (await response.json()) as { orderId: string; orderNumber: string };
+        saved = { id: data.orderId, orderNumber: data.orderNumber };
+        setRegisteredOrder(saved);
+      }
+      order.orderNumber = saved.orderNumber;
+      if (notifyWhatsApp) {
+        const whatsappUrl = buildWhatsAppUrl(order, settings.whatsappNumber, purpose);
+        if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
+        else window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+      }
       setOrderStatus("sent");
-      setCart([]);
-      setShowPayment(false);
+      void loadOrders();
     } catch {
-      window.open(buildWhatsAppUrl(order, settings.whatsappNumber), "_blank", "noopener,noreferrer");
+      whatsappWindow?.close();
       setOrderStatus("error");
     }
   }
@@ -442,6 +491,9 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           onSaveSettings={saveSettings}
           deliveryZones={deliveryZones}
           setDeliveryZones={setDeliveryZones}
+          orders={orders}
+          setOrders={setOrders}
+          onReloadOrders={loadOrders}
         />
       </main>
     );
@@ -454,9 +506,12 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         <PaymentDialog
           settings={settings}
           total={total}
+          registeredOrder={registeredOrder}
           onClose={() => setShowPayment(false)}
-          onMercadoPago={() => void completeOrder("mercadopago")}
-          onTransfer={() => void completeOrder("transfer")}
+          onOpenMercadoPago={() => window.open(settings.mercadoPagoLink, "_blank", "noopener,noreferrer")}
+          onRegister={(paymentMethod, purpose, notifyWhatsApp) =>
+            void completeOrder(paymentMethod, purpose, notifyWhatsApp)
+          }
         />
       ) : null}
 
@@ -518,6 +573,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           deliveryEnabled={settings.deliveryEnabled}
           deliveryZones={activeZones}
           zoneStatus={zoneStatus}
+          addressResults={addressResults}
+          onSelectAddress={selectAddress}
         />
       </section>
 
@@ -831,6 +888,18 @@ function CheckoutPanel(props: {
   deliveryEnabled: boolean;
   deliveryZones: DeliveryZone[];
   zoneStatus: string;
+  addressResults: Array<{
+    formattedAddress: string;
+    city: string;
+    searchableAddress: string;
+    location: { lat: number; lng: number };
+  }>;
+  onSelectAddress: (result: {
+    formattedAddress: string;
+    city: string;
+    searchableAddress: string;
+    location: { lat: number; lng: number };
+  }) => void;
 }) {
   return (
     <aside id="checkout" className="min-w-0 lg:sticky lg:top-24 lg:self-start">
@@ -883,39 +952,67 @@ function CheckoutPanel(props: {
           </div>
           {props.deliveryEnabled ? (
             <>
+              <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-sm font-bold">
+                <input
+                  type="checkbox"
+                  checked={props.customer.manualAddress}
+                  onChange={(event) => props.onCustomer("manualAddress", event.target.checked)}
+                />
+                Ingresar dirección manualmente
+              </label>
               <label className="grid gap-1 text-sm font-bold">
-                Direccion
+                Dirección
                 <div className="flex gap-2">
                   <input
                     value={props.customer.address}
                     onChange={(event) => props.onCustomer("address", event.target.value)}
                     className="h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 font-medium"
-                    placeholder="Calle, numero, comuna"
+                    placeholder={props.customer.manualAddress ? "Calle y número" : "Busca tu calle y número"}
                     required
                   />
-                  <button type="button" onClick={props.onDetectZone} title="Buscar en Google Maps" className="action-button grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
-                    <MapPin size={18} />
-                  </button>
+                  {!props.customer.manualAddress ? (
+                    <button type="button" onClick={props.onDetectZone} title="Buscar dirección" className="action-button grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
+                      <Search size={18} />
+                    </button>
+                  ) : null}
                 </div>
               </label>
-              {props.zoneStatus ? <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{props.zoneStatus}</p> : null}
-              <p className="text-xs font-semibold text-neutral-500">
-                Busqueda de direccion por <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a>.
-              </p>
-              <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-sm font-bold">
-                <input type="checkbox" checked={props.customer.manualAddress} onChange={(event) => props.onCustomer("manualAddress", event.target.checked)} />
-                Direccion manual
-              </label>
-              <label className="grid gap-1 text-sm font-bold">
-                Zona de despacho
-                <select value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
-                  {props.deliveryZones.map((zone) => (
-                    <option key={zone.id} value={zone.id}>
-                      {zone.name} - {formatCurrency(zone.price)}
-                    </option>
+              {!props.customer.manualAddress && props.addressResults.length ? (
+                <div className="grid gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg">
+                  {props.addressResults.map((result) => (
+                    <button
+                      key={`${result.formattedAddress}-${result.location.lat}`}
+                      type="button"
+                      onClick={() => props.onSelectAddress(result)}
+                      className="rounded-md px-3 py-3 text-left text-sm font-semibold hover:bg-neutral-100"
+                    >
+                      {result.formattedAddress}
+                    </button>
                   ))}
-                </select>
-              </label>
+                </div>
+              ) : null}
+              {props.zoneStatus ? <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{props.zoneStatus}</p> : null}
+              {props.customer.manualAddress ? (
+                <>
+                  <Input label="Ciudad" value={props.customer.city} onChange={(value) => props.onCustomer("city", value)} required />
+                  <Input label="Departamento, casa, referencia (opcional)" value={props.customer.addressExtra} onChange={(value) => props.onCustomer("addressExtra", value)} />
+                  <label className="grid gap-1 text-sm font-bold">
+                    Zona de despacho
+                    <select value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
+                      {props.deliveryZones.map((zone) => (
+                        <option key={zone.id} value={zone.id}>
+                          {zone.name} - {formatCurrency(zone.price)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              ) : null}
+              {!props.customer.manualAddress ? (
+                <p className="text-xs font-semibold text-neutral-500">
+                  Búsqueda por <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a>.
+                </p>
+              ) : null}
             </>
           ) : (
             <div className="rounded-lg border border-green-200 bg-green-50 p-3">
@@ -950,54 +1047,78 @@ function CheckoutPanel(props: {
 function PaymentDialog(props: {
   settings: SiteSettings;
   total: number;
+  registeredOrder: { id: string; orderNumber: string } | null;
   onClose: () => void;
-  onMercadoPago: () => void;
-  onTransfer: () => void;
+  onOpenMercadoPago: () => void;
+  onRegister: (
+    paymentMethod: OrderPayload["paymentMethod"],
+    purpose: "order" | "mercadopago" | "transfer",
+    notifyWhatsApp: boolean,
+  ) => void;
 }) {
-  const comprobanteUrl = `https://wa.me/${props.settings.whatsappNumber}?text=${encodeURIComponent(
+  const [advanceMethod, setAdvanceMethod] = useState<"mercadopago" | "transfer">("mercadopago");
+  /*
     "Hola, realicé una transferencia y deseo enviar mi comprobante de pago.",
   )}`;
+  */
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-neutral-950/80 px-4 py-6 backdrop-blur">
-      <div className="w-full max-w-2xl rounded-lg bg-white p-5 shadow-2xl">
+      <div className="w-full max-w-3xl rounded-lg bg-white p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-black">Completar Pago</h2>
+            <h2 className="text-2xl font-black">Completar pago</h2>
             <p className="text-sm font-semibold text-neutral-500">Total: {formatCurrency(props.total)}</p>
+            {props.registeredOrder ? <p className="mt-1 text-sm font-black text-green-700">Pedido registrado: {props.registeredOrder.orderNumber}</p> : null}
           </div>
           <button type="button" onClick={props.onClose} className="grid size-10 place-items-center rounded-lg bg-neutral-100">
             <X size={18} />
           </button>
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-neutral-200 p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <CreditCard className="text-sky-600" size={22} />
-              <h3 className="text-lg font-black">Pagar con Mercado Pago</h3>
-            </div>
-            <div className="mb-4 inline-flex items-center rounded-md bg-sky-100 px-3 py-2 text-sm font-black text-sky-800">
-              Mercado Pago
-            </div>
-            <p className="text-sm leading-6 text-neutral-600">Se abrira el link de pago configurado. La integracion queda preparada para credenciales reales.</p>
-            <button type="button" onClick={props.onMercadoPago} className="mt-4 h-11 w-full rounded-lg bg-sky-600 text-sm font-black text-white">
-              Pagar con Mercado Pago
+        <div className="grid gap-4">
+          <section className="rounded-lg border border-neutral-200 p-4">
+            <h3 className="text-lg font-black">Pago contra entrega</h3>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">
+              Paga cuando recibas tu pedido. La confirmación manual puede aumentar ligeramente el tiempo de entrega.
+            </p>
+            <button type="button" onClick={() => props.onRegister("cash_on_delivery", "order", true)} className="action-button mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-green-600 text-sm font-black text-white">
+              <FaWhatsapp size={19} />
+              Registrar y confirmar por WhatsApp
             </button>
-          </div>
-          <div className="rounded-lg border border-neutral-200 p-4">
-            <div className="mb-3 flex items-center gap-2">
-              <Landmark className="text-green-700" size={22} />
-              <h3 className="text-lg font-black">Transferencia</h3>
+          </section>
+          <section className="rounded-lg border border-neutral-200 p-4">
+            <h3 className="text-lg font-black">Pago anticipado</h3>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">Paga antes del despacho mediante Mercado Pago o transferencia bancaria.</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <SegmentButton active={advanceMethod === "mercadopago"} onClick={() => setAdvanceMethod("mercadopago")}>Mercado Pago</SegmentButton>
+              <SegmentButton active={advanceMethod === "transfer"} onClick={() => setAdvanceMethod("transfer")}>Transferencia</SegmentButton>
             </div>
-            <BankDetails settings={props.settings} />
-            <a href={comprobanteUrl} target="_blank" rel="noreferrer" className="mt-4 flex h-11 items-center justify-center gap-2 rounded-lg bg-green-600 text-sm font-black text-white">
-              <MessageCircle size={18} />
-              Enviar comprobante por WhatsApp
-            </a>
-            <button type="button" onClick={props.onTransfer} className="mt-2 h-11 w-full rounded-lg border border-neutral-300 text-sm font-black">
-              Registrar pedido por transferencia
+            {advanceMethod === "mercadopago" ? (
+              <div className="mt-4 rounded-lg bg-sky-50 p-4">
+                <button type="button" onClick={props.onOpenMercadoPago} className="action-button flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-sky-600 text-sm font-black text-white">
+                  <SiMercadopago size={25} />
+                  Pagar con Mercado Pago
+                </button>
+                <button type="button" onClick={() => props.onRegister("mercadopago", "mercadopago", true)} className="action-button mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-sky-300 bg-white text-sm font-black text-sky-800">
+                  <FaWhatsapp size={19} />
+                  Avisar pago por WhatsApp
+                </button>
+              </div>
+            ) : (
+              <div className="mt-4 min-w-0 rounded-lg bg-neutral-50 p-4">
+                <BankDetails settings={props.settings} />
+                <button type="button" onClick={() => props.onRegister("transfer", "transfer", true)} className="action-button mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-center text-sm font-black text-white">
+                  <FaWhatsapp size={19} />
+                  Enviar comprobante por WhatsApp
+                </button>
+              </div>
+            )}
+            <button type="button" onClick={() => props.onRegister(advanceMethod, advanceMethod, false)} className="action-button mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 px-3 py-2 text-center text-sm font-black text-white">
+              <Check size={18} />
+              Confirmar pago y registrar pedido
             </button>
-          </div>
+            <p className="mt-2 text-center text-xs font-semibold text-neutral-500">Usa este botón cuando el pago ya fue realizado.</p>
+          </section>
         </div>
       </div>
     </div>
@@ -1019,9 +1140,9 @@ function BankDetails({ settings }: { settings: SiteSettings }) {
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-3 rounded-md bg-neutral-100 px-3 py-2">
+    <div className="grid min-w-0 gap-1 rounded-md bg-white px-3 py-2 sm:grid-cols-[120px_minmax(0,1fr)]">
       <dt className="font-bold text-neutral-600">{label}</dt>
-      <dd className="text-right font-black">{value}</dd>
+      <dd className="min-w-0 break-words text-left font-black sm:text-right">{value}</dd>
     </div>
   );
 }
@@ -1037,8 +1158,8 @@ function AdminPanel(props: {
   bulkText: string;
   setBulkText: (value: string) => void;
   importBulkProducts: () => Promise<void>;
-  adminView: "catalog" | "zones" | "settings";
-  setAdminView: (value: "catalog" | "zones" | "settings") => void;
+  adminView: "orders" | "catalog" | "zones" | "faqs" | "settings";
+  setAdminView: (value: "orders" | "catalog" | "zones" | "faqs" | "settings") => void;
   productSource: "local" | "supabase";
   syncStatus: "idle" | "syncing" | "saved" | "error";
   onSaveProduct: (product: Product) => Promise<void>;
@@ -1047,6 +1168,9 @@ function AdminPanel(props: {
   onSaveSettings: (settings: SiteSettings) => Promise<void>;
   deliveryZones: DeliveryZone[];
   setDeliveryZones: (zones: DeliveryZone[]) => void;
+  orders: SavedOrder[];
+  setOrders: (orders: SavedOrder[]) => void;
+  onReloadOrders: () => Promise<void>;
 }) {
   const [login, setLogin] = useState({ username: "bodegon", password: "" });
   const [loginError, setLoginError] = useState("");
@@ -1060,6 +1184,7 @@ function AdminPanel(props: {
     });
     if (response.ok) {
       props.setAuthenticated(true);
+      void props.onReloadOrders();
       setLogin({ username: "bodegon", password: "" });
       setLoginError("");
     } else {
@@ -1115,8 +1240,10 @@ function AdminPanel(props: {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <SegmentButton active={props.adminView === "orders"} onClick={() => props.setAdminView("orders")}>Pedidos</SegmentButton>
             <SegmentButton active={props.adminView === "catalog"} onClick={() => props.setAdminView("catalog")}>Catalogo</SegmentButton>
             <SegmentButton active={props.adminView === "zones"} onClick={() => props.setAdminView("zones")}>Zonas</SegmentButton>
+            <SegmentButton active={props.adminView === "faqs"} onClick={() => props.setAdminView("faqs")}>FAQ</SegmentButton>
             <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
             <button type="button" onClick={() => void logout()} className="flex h-10 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm font-black">
               <LogOut size={16} />
@@ -1124,10 +1251,14 @@ function AdminPanel(props: {
             </button>
           </div>
         </div>
-        {props.adminView === "catalog" ? (
+        {props.adminView === "orders" ? (
+          <OrdersAdmin orders={props.orders} setOrders={props.setOrders} />
+        ) : props.adminView === "catalog" ? (
           <CatalogAdmin {...props} updateProduct={updateProduct} />
         ) : props.adminView === "zones" ? (
           <ZonesAdmin zones={props.deliveryZones} setZones={props.setDeliveryZones} />
+        ) : props.adminView === "faqs" ? (
+          <FaqAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} />
         ) : (
           <SettingsAdmin
             key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}`}
@@ -1138,6 +1269,97 @@ function AdminPanel(props: {
         )}
       </div>
     </section>
+  );
+}
+
+function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (orders: SavedOrder[]) => void }) {
+  async function updateOrder(order: SavedOrder, field: "paymentStatus" | "fulfillmentStatus", value: string) {
+    const response = await fetch(`/api/orders/${order.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ [field]: value }),
+    });
+    if (response.ok) {
+      setOrders(orders.map((item) => item.id === order.id ? { ...item, [field]: value } : item));
+    }
+  }
+
+  if (!orders.length) {
+    return <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center font-bold text-neutral-500">Aún no hay pedidos registrados.</div>;
+  }
+
+  return (
+    <div className="grid gap-4">
+      {orders.map((order) => (
+        <article key={order.id} className="rounded-lg border border-neutral-200 bg-white p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase text-red-600">{order.orderNumber}</p>
+              <h3 className="text-xl font-black">{order.customerName}</h3>
+              <p className="mt-1 text-sm text-neutral-600">{new Date(order.createdAt).toLocaleString("es-CL")}</p>
+            </div>
+            <a
+              href={`https://wa.me/${normalizeChilePhone(order.customerPhone)}?text=${encodeURIComponent(`Hola ${order.customerName}, te contactamos por tu pedido ${order.orderNumber}.`)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-green-600 px-4 text-sm font-black text-white"
+            >
+              <FaWhatsapp size={19} /> Hablar por WhatsApp
+            </a>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="min-w-0">
+              <p className="break-words text-sm font-semibold">{order.address}{order.city ? `, ${order.city}` : ""}</p>
+              {order.addressExtra ? <p className="text-sm text-neutral-600">{order.addressExtra}</p> : null}
+              <p className="mt-2 text-sm">{order.customerPhone} · {order.customerEmail}</p>
+              <div className="mt-3 grid gap-1 rounded-lg bg-neutral-50 p-3 text-sm">
+                {order.items.map((item) => <p key={`${order.id}-${item.name}`}>{item.quantity}x {item.name} · {formatCurrency(item.lineTotal)}</p>)}
+              </div>
+              <p className="mt-3 text-lg font-black">Total: {formatCurrency(order.total)}</p>
+            </div>
+            <div className="grid content-start gap-3">
+              <label className="grid gap-1 text-sm font-bold">
+                Estado del pedido
+                <select value={order.fulfillmentStatus} onChange={(event) => void updateOrder(order, "fulfillmentStatus", event.target.value)} className="h-10 rounded-lg border border-neutral-300 px-2">
+                  <option value="new">Nuevo</option>
+                  <option value="confirmed">Confirmado</option>
+                  <option value="preparing">Preparando</option>
+                  <option value="delivering">En reparto</option>
+                  <option value="completed">Completado</option>
+                  <option value="cancelled">Cancelado</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm font-bold">
+                Estado del pago
+                <select value={order.paymentStatus} onChange={(event) => void updateOrder(order, "paymentStatus", event.target.value)} className="h-10 rounded-lg border border-neutral-300 px-2">
+                  <option value="pending">Pendiente</option>
+                  <option value="paid">Pagado</option>
+                  <option value="refunded">Reembolsado</option>
+                </select>
+              </label>
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function FaqAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSaveSettings: (settings: SiteSettings) => Promise<void> }) {
+  const [items, setItems] = useState<FaqItem[]>(settings.faqs);
+
+  return (
+    <div className="grid gap-4">
+      {items.map((faq) => (
+        <div key={faq.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+          <Input label="Pregunta" value={faq.question} onChange={(question) => setItems(items.map((item) => item.id === faq.id ? { ...item, question } : item))} />
+          <Textarea label="Respuesta" value={faq.answer} onChange={(answer) => setItems(items.map((item) => item.id === faq.id ? { ...item, answer } : item))} />
+          <button type="button" onClick={() => setItems(items.filter((item) => item.id !== faq.id))} className="action-button h-10 rounded-lg bg-red-50 text-sm font-black text-red-700">Eliminar</button>
+        </div>
+      ))}
+      <button type="button" onClick={() => setItems([...items, { id: crypto.randomUUID(), question: "Nueva pregunta", answer: "Nueva respuesta" }])} className="action-button h-11 rounded-lg border border-neutral-300 bg-white text-sm font-black">Agregar pregunta</button>
+      <button type="button" onClick={() => void onSaveSettings({ ...settings, faqs: items })} className="action-button h-11 rounded-lg bg-neutral-950 text-sm font-black text-white">Guardar preguntas frecuentes</button>
+    </div>
   );
 }
 
@@ -1463,8 +1685,8 @@ function InfoSections({ settings }: { settings: SiteSettings }) {
         <section id="faq">
           <h2 className="mb-4 text-3xl font-black">Preguntas frecuentes</h2>
           <div className="grid gap-3">
-            {faqs.map((faq) => (
-              <details key={faq.question} className="rounded-lg border border-neutral-200 bg-white p-4">
+            {settings.faqs.map((faq) => (
+              <details key={faq.id} className="rounded-lg border border-neutral-200 bg-white p-4">
                 <summary className="cursor-pointer text-base font-black">{faq.question}</summary>
                 <p className="mt-3 leading-7 text-neutral-600">{faq.answer}</p>
               </details>

@@ -1,4 +1,5 @@
 import type { SiteSettings } from "./types";
+import { faqs } from "./catalog";
 
 const forceMaintenance =
   process.env.NEXT_PUBLIC_FORCE_MAINTENANCE === "true" || process.env.FORCE_MAINTENANCE === "true";
@@ -14,6 +15,7 @@ export const defaultSettings: SiteSettings = {
   instagramUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",
   facebookUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",
   mercadoPagoLink: process.env.NEXT_PUBLIC_MERCADOPAGO_LINK || "https://www.mercadopago.cl/",
+  faqs: faqs.map((faq, index) => ({ id: `faq-${index + 1}`, ...faq })),
   bankDetails: {
     bank: "Banco de Chile",
     accountHolder: "Fonocopete Penquista",

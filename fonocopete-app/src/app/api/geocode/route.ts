@@ -12,7 +12,7 @@ export async function GET(request: Request) {
       q: `${address}, Region del Biobio, Chile`,
       format: "jsonv2",
       addressdetails: "1",
-      limit: "1",
+      limit: "5",
       countrycodes: "cl",
     });
     const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
@@ -23,14 +23,21 @@ export async function GET(request: Request) {
       next: { revalidate: 86400 },
     });
     const results = await response.json();
-    const result = results[0];
-    if (!result) return NextResponse.json({ error: "Direccion no encontrada" }, { status: 404 });
+    if (!results.length) return NextResponse.json({ error: "Direccion no encontrada" }, { status: 404 });
 
     return NextResponse.json({
       provider: "openstreetmap",
-      formattedAddress: result.display_name,
-      location: { lat: Number(result.lat), lng: Number(result.lon) },
-      searchableAddress: Object.values(result.address || {}).join(" "),
+      results: results.map((result: {
+        display_name: string;
+        lat: string;
+        lon: string;
+        address?: Record<string, string>;
+      }) => ({
+        formattedAddress: result.display_name,
+        city: result.address?.city || result.address?.town || result.address?.municipality || result.address?.county || "",
+        location: { lat: Number(result.lat), lng: Number(result.lon) },
+        searchableAddress: Object.values(result.address || {}).join(" "),
+      })),
     });
   }
 
@@ -49,8 +56,13 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     provider: "google",
-    formattedAddress: result.formatted_address,
-    location: result.geometry.location,
-    searchableAddress: result.address_components.map((item: { long_name: string }) => item.long_name).join(" "),
+    results: [{
+      formattedAddress: result.formatted_address,
+      city: result.address_components.find((item: { types: string[] }) =>
+        item.types.includes("locality") || item.types.includes("administrative_area_level_3")
+      )?.long_name || "",
+      location: result.geometry.location,
+      searchableAddress: result.address_components.map((item: { long_name: string }) => item.long_name).join(" "),
+    }],
   });
 }
