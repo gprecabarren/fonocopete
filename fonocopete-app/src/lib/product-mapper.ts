@@ -5,6 +5,8 @@ type ProductRow = {
   name: string;
   category_id: Product["category"];
   price: number;
+  original_price: number | null;
+  beer_format: Product["beerFormat"];
   image_url: string | null;
   volume: string | null;
   description: string | null;
@@ -18,6 +20,8 @@ export function mapProductRow(row: ProductRow): Product {
     name: row.name,
     category: row.category_id,
     price: row.price,
+    originalPrice: row.original_price,
+    beerFormat: row.beer_format,
     imageUrl: row.image_url || "",
     volume: row.volume || "",
     description: row.description || "",
@@ -32,6 +36,8 @@ export function mapProductToRow(product: Product) {
     name: product.name,
     category_id: product.category,
     price: product.price,
+    original_price: product.originalPrice || null,
+    beer_format: product.category === "cervezas" ? product.beerFormat || null : null,
     image_url: product.imageUrl,
     volume: product.volume,
     description: product.description,

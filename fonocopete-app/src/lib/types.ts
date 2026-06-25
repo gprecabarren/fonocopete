@@ -5,6 +5,8 @@ export type Product = {
   name: string;
   category: CategoryId;
   price: number;
+  originalPrice?: number | null;
+  beerFormat?: "latas" | "botellas" | null;
   imageUrl: string;
   volume: string;
   description: string;

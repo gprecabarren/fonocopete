@@ -12,11 +12,11 @@ export const categories: Array<{ id: CategoryId; label: string }> = [
 export const initialProducts: Product[] = [
   {
     id: "promo-pisco-energetica",
-    name: "Promo Pisco + Energetica",
+    name: "Promo Pisco + Energética",
     category: "promociones",
     price: 12990,
     volume: "1 botella + 2 latas",
-    description: "Pack listo para compartir, frio segun disponibilidad.",
+    description: "Pack listo para compartir, frío según disponibilidad.",
     imageUrl:
       "https://images.unsplash.com/photo-1605270012917-bf157c5a9541?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -28,7 +28,7 @@ export const initialProducts: Product[] = [
     category: "promociones",
     price: 6990,
     volume: "6 x 355 cc",
-    description: "Cervezas rubias para llegar rapido al carrito.",
+    description: "Cervezas rubias para llegar rápido al carrito.",
     imageUrl:
       "https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -38,9 +38,10 @@ export const initialProducts: Product[] = [
     id: "cristal-lata",
     name: "Cristal Lata",
     category: "cervezas",
+    beerFormat: "latas",
     price: 1190,
     volume: "470 cc",
-    description: "Clasica chilena, ideal para pedido rapido.",
+    description: "Clásica chilena, ideal para pedido rápido.",
     imageUrl:
       "https://images.unsplash.com/photo-1584225064785-c62a8b43d148?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -49,6 +50,7 @@ export const initialProducts: Product[] = [
     id: "kunstmann-torobayo",
     name: "Kunstmann Torobayo",
     category: "cervezas",
+    beerFormat: "botellas",
     price: 1790,
     volume: "330 cc",
     description: "Amber ale con cuerpo medio.",
@@ -73,7 +75,7 @@ export const initialProducts: Product[] = [
     category: "piscos",
     price: 9490,
     volume: "750 cc",
-    description: "Formato clasico para reuniones.",
+    description: "Formato clásico para reuniones.",
     imageUrl:
       "https://images.unsplash.com/photo-1527281400683-1aae777175f8?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -84,7 +86,7 @@ export const initialProducts: Product[] = [
     category: "vinos",
     price: 5490,
     volume: "750 cc",
-    description: "Tinto de mesa para acompanar comida.",
+    description: "Tinto de mesa para acompañar comida.",
     imageUrl:
       "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -95,7 +97,7 @@ export const initialProducts: Product[] = [
     category: "destilados",
     price: 14990,
     volume: "750 cc",
-    description: "Vodka premium para cocteleria simple.",
+    description: "Vodka premium para coctelería simple.",
     imageUrl:
       "https://images.unsplash.com/photo-1614313511387-1436a4480ebb?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -148,9 +150,9 @@ export const deliveryZones: DeliveryZone[] = [
 
 export const faqs = [
   {
-    question: "¿Puedo pagar por MercadoPago?",
+    question: "¿Puedo pagar por Mercado Pago?",
     answer:
-      "Si. El pedido muestra el total y abre el link de pago. El pago se verifica manualmente antes del despacho.",
+      "Sí. El pedido muestra el total y abre el enlace de pago. El pago se verifica manualmente antes del despacho.",
   },
   {
     question: "¿Los tiempos de entrega son exactos?",
@@ -158,13 +160,13 @@ export const faqs = [
       "No. Los tiempos dependen de demanda, clima, distancia y disponibilidad del repartidor.",
   },
   {
-    question: "¿Que pasa si mi direccion no aparece?",
+    question: "¿Qué pasa si mi dirección no aparece?",
     answer:
-      "Puedes escribir una direccion manual y el despacho queda sujeto a confirmacion por WhatsApp.",
+      "Puedes escribir una dirección manual y el despacho queda sujeto a confirmación por WhatsApp.",
   },
   {
     question: "¿Venden a menores de edad?",
     answer:
-      "No. La entrega requiere comprador mayor de 18 anos y se puede solicitar documento.",
+      "No. La entrega requiere comprador mayor de 18 años y se puede solicitar documento.",
   },
 ];

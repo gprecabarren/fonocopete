@@ -56,7 +56,7 @@ export async function PATCH(request: Request) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const parsed = settingsSchema.safeParse(await request.json());
-  if (!parsed.success) return NextResponse.json({ error: "Ajustes invalidos" }, { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "Ajustes inválidos" }, { status: 400 });
 
   const supabase = createServerSupabaseClient();
   if (!supabase) {

@@ -10,6 +10,8 @@ const productSchema = z.object({
   name: z.string().min(1),
   category: z.enum(["promociones", "cervezas", "piscos", "vinos", "destilados", "extras"]),
   price: z.number().int().nonnegative(),
+  originalPrice: z.number().int().nonnegative().nullable().optional(),
+  beerFormat: z.enum(["latas", "botellas"]).nullable().optional(),
   imageUrl: z.string(),
   volume: z.string(),
   description: z.string(),
@@ -26,7 +28,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("products")
-    .select("id,name,category_id,price,image_url,volume,description,stock,featured")
+    .select("id,name,category_id,price,original_price,beer_format,image_url,volume,description,stock,featured")
     .order("featured", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -45,7 +47,7 @@ export async function POST(request: Request) {
   const parsed = z.union([productSchema, z.array(productSchema)]).safeParse(await request.json());
 
   if (!parsed.success) {
-    return NextResponse.json({ error: "Producto invalido" }, { status: 400 });
+    return NextResponse.json({ error: "Producto inválido" }, { status: 400 });
   }
 
   const supabase = createServerSupabaseClient();
@@ -58,7 +60,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("products")
     .upsert(products.map(mapProductToRow), { onConflict: "id" })
-    .select("id,name,category_id,price,image_url,volume,description,stock,featured");
+    .select("id,name,category_id,price,original_price,beer_format,image_url,volume,description,stock,featured");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

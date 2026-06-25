@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export async function GET(request: Request) {
   const address = new URL(request.url).searchParams.get("address")?.trim();
   if (!address || address.length < 3) {
-    return NextResponse.json({ error: "Direccion invalida" }, { status: 400 });
+    return NextResponse.json({ error: "Dirección inválida" }, { status: 400 });
   }
 
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
       next: { revalidate: 86400 },
     });
     const results = await response.json();
-    if (!results.length) return NextResponse.json({ error: "Direccion no encontrada" }, { status: 404 });
+    if (!results.length) return NextResponse.json({ error: "Dirección no encontrada" }, { status: 404 });
 
     return NextResponse.json({
       provider: "openstreetmap",
@@ -52,7 +52,7 @@ export async function GET(request: Request) {
   });
   const data = await response.json();
   const result = data.results?.[0];
-  if (!result) return NextResponse.json({ error: "Direccion no encontrada" }, { status: 404 });
+  if (!result) return NextResponse.json({ error: "Dirección no encontrada" }, { status: 404 });
 
   return NextResponse.json({
     provider: "google",

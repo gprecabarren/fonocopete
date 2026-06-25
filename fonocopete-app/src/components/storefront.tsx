@@ -35,7 +35,7 @@ import {
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa";
-import { SiMercadopago } from "react-icons/si";
+import { SiGooglemaps, SiMercadopago, SiWaze } from "react-icons/si";
 import { categories, deliveryZones as initialDeliveryZones, initialProducts } from "@/lib/catalog";
 import { findZoneByAddress, findZoneByCoordinates } from "@/lib/delivery";
 import { formatCurrency, normalizeText } from "@/lib/format";
@@ -65,7 +65,7 @@ const emptyCustomer: CustomerDetails = {
   city: "",
   addressExtra: "",
   manualAddress: false,
-  zoneId: initialDeliveryZones[0].id,
+  zoneId: "",
   notes: "",
 };
 
@@ -74,6 +74,8 @@ const productDraft: Product = {
   name: "",
   category: "promociones",
   price: 0,
+  originalPrice: null,
+  beerFormat: null,
   imageUrl: "",
   volume: "",
   description: "",
@@ -85,6 +87,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [settings, setSettings] = useState<SiteSettings>(() => readLocal(settingsStorageKey, defaultSettings));
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<CategoryId>("promociones");
+  const [activeBeerFormat, setActiveBeerFormat] = useState<"all" | "latas" | "botellas">("all");
   const [query, setQuery] = useState("");
   const [customer, setCustomer] = useState<CustomerDetails>(emptyCustomer);
   const [orderStatus, setOrderStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -154,7 +157,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         const data = (await zonesResponse.value.json()) as { zones: DeliveryZone[]; source: "demo" | "supabase" };
         if (data.zones.length) {
           setDeliveryZones(data.zones);
-          setCustomer((current) => ({ ...current, zoneId: data.zones[0].id }));
+          setCustomer((current) => ({ ...current, zoneId: current.zoneId }));
         }
       }
     }
@@ -170,17 +173,20 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   const activeZones = deliveryZones.filter((zone) => zone.active);
-  const activeZone = activeZones.find((zone) => zone.id === customer.zoneId) ?? activeZones[0] ?? initialDeliveryZones[0];
+  const selectedZone = activeZones.find((zone) => zone.id === customer.zoneId);
+  const activeZone = selectedZone ?? { ...initialDeliveryZones[0], id: "", name: "Sin zona", price: 0, eta: "Por coordinar" };
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
     return products.filter((product) => {
       const matchesCategory = product.category === activeCategory;
+      const matchesBeerFormat =
+        activeCategory !== "cervezas" || activeBeerFormat === "all" || product.beerFormat === activeBeerFormat;
       const matchesQuery =
         !cleanQuery ||
         normalizeText(`${product.name} ${product.description} ${product.volume}`).includes(cleanQuery);
-      return product.stock !== "hidden" && matchesCategory && matchesQuery;
+      return product.stock !== "hidden" && matchesCategory && matchesBeerFormat && matchesQuery;
     });
-  }, [products, activeCategory, query]);
+  }, [products, activeCategory, activeBeerFormat, query]);
   const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden").slice(0, 2);
   const cartLines = cart
     .map((item) => {
@@ -189,7 +195,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     })
     .filter(Boolean) as Array<CartItem & { product: Product; lineTotal: number }>;
   const subtotal = cartLines.reduce((sum, item) => sum + item.lineTotal, 0);
-  const deliveryPrice = settings.deliveryEnabled && subtotal > 0 ? activeZone.price : 0;
+  const deliveryPrice = settings.deliveryEnabled && subtotal > 0 && selectedZone ? selectedZone.price : 0;
   const total = subtotal + deliveryPrice;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -224,7 +230,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   async function detectZone() {
-    setZoneStatus("Buscando direccion...");
+    setZoneStatus("Buscando dirección...");
     try {
       const response = await fetch(`/api/geocode?address=${encodeURIComponent(customer.address)}`);
       if (response.ok) {
@@ -237,13 +243,13 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           }>;
         };
         setAddressResults(data.results);
-        setZoneStatus(data.results.length ? "Selecciona la direccion correcta." : "No encontramos coincidencias.");
+        setZoneStatus(data.results.length ? "Selecciona la dirección correcta." : "No encontramos coincidencias.");
         return;
       }
     } catch {
       setAddressResults([]);
     }
-    setZoneStatus("No encontramos coincidencias. Prueba con direccion manual.");
+    setZoneStatus("No encontramos coincidencias. Prueba con dirección manual.");
   }
 
   function selectAddress(result: {
@@ -266,7 +272,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (zone) {
       setZoneStatus(`Zona detectada: ${zone.name}`);
     } else {
-      setZoneStatus("Direccion encontrada, pero la zona requiere confirmacion.");
+      setZoneStatus("Dirección encontrada, pero la zona requiere confirmación.");
     }
   }
 
@@ -274,16 +280,17 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (settings.maintenanceMode) return "El sitio esta en mantenimiento.";
     if (!cartLines.length) return "Agrega al menos un producto disponible.";
     if (!customer.name.trim()) return "Ingresa tu nombre.";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo valido.";
-    if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 digitos en el telefono.";
-    if (settings.deliveryEnabled && customer.address.trim().length < 3) return "Ingresa tu dirección.";
-    if (settings.deliveryEnabled && customer.manualAddress && customer.city.trim().length < 2) return "Ingresa la ciudad.";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo válido.";
+    if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 dígitos en el teléfono.";
+    if (customer.address.trim().length < 3) return "Ingresa tu dirección.";
+    if ((!settings.deliveryEnabled || customer.manualAddress) && customer.city.trim().length < 2) return "Ingresa la ciudad.";
+    if ((!settings.deliveryEnabled || customer.manualAddress) && !customer.zoneId) return "Selecciona una zona de despacho.";
     return "";
   }
 
   function buildOrder(paymentMethod: OrderPayload["paymentMethod"]): OrderPayload {
     return {
-      customer: settings.deliveryEnabled ? customer : { ...customer, address: "Por coordinar", manualAddress: true },
+      customer: settings.deliveryEnabled ? customer : { ...customer, manualAddress: true },
       items: cartLines.map((item) => ({
         name: item.product.name,
         quantity: item.quantity,
@@ -297,7 +304,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         ? customer.manualAddress
           ? `${activeZone.name} (manual)`
           : activeZone.name
-        : "Entrega por coordinar - sin cobro",
+        : `${activeZone.name} - sin cobro`,
       paymentLink: settings.mercadoPagoLink,
       paymentMethod,
     };
@@ -404,7 +411,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       imageUrl:
         draft.imageUrl ||
         "https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=900&q=80",
-      description: draft.description || "Producto cargado desde administracion.",
+      description: draft.description || "Producto cargado desde administración.",
       volume: draft.volume || "Formato por definir",
     };
 
@@ -429,7 +436,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           imageUrl:
             imageUrl ||
             "https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=900&q=80",
-          description: "Carga rapida desde lista.",
+          description: "Carga rápida desde lista.",
           stock: "available" as const,
         };
       })
@@ -523,16 +530,16 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           <div className="flex min-w-0 flex-col justify-center">
             <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
               <ShieldCheck size={17} />
-              Solo mayores de 18 anos
+              Solo mayores de 18 años
             </div>
             <h1 className="max-w-3xl text-4xl font-black leading-tight sm:text-5xl lg:text-6xl">
               {settings.businessName}
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-300 sm:text-lg">
-              Catalogo vivo, carrito simple y confirmacion por WhatsApp para comprar sin pedir PDF.
+              Catálogo vivo, carrito simple y confirmación por WhatsApp para comprar sin pedir PDF.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
-              <Metric icon={<Beer size={20} />} label="Catalogo" value={`${products.filter((p) => p.stock !== "hidden").length} productos`} />
+              <Metric icon={<Beer size={20} />} label="Catálogo" value={`${products.filter((p) => p.stock !== "hidden").length} productos`} />
               <Metric icon={<Bike size={20} />} label="Despacho" value="Por zonas" />
               <Metric icon={<MessageCircle size={20} />} label="Compra" value="WhatsApp" />
             </div>
@@ -547,7 +554,14 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
 
       <section id="catalogo" className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_390px]">
         <div className="min-w-0">
-          <CatalogToolbar query={query} setQuery={setQuery} activeCategory={activeCategory} setActiveCategory={setActiveCategory} />
+          <CatalogToolbar
+            query={query}
+            setQuery={setQuery}
+            activeCategory={activeCategory}
+            setActiveCategory={setActiveCategory}
+            activeBeerFormat={activeBeerFormat}
+            setActiveBeerFormat={setActiveBeerFormat}
+          />
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredProducts.map((product) => (
               <ProductCard key={product.id} product={product} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
@@ -629,11 +643,11 @@ function resizeImage(file: File) {
 function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: number }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const links = [
-    { href: "#catalogo", label: "Catalogo" },
+    { href: "#catalogo", label: "Catálogo" },
     { href: "#promociones", label: "Promociones" },
     { href: "#checkout", label: "Mi pedido" },
     { href: "#faq", label: "Preguntas frecuentes" },
-    { href: "#terminos", label: "Terminos" },
+    { href: "#terminos", label: "Términos" },
   ];
 
   return (
@@ -644,7 +658,7 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
             type="button"
             onClick={() => setMenuOpen((current) => !current)}
             aria-expanded={menuOpen}
-            aria-label={menuOpen ? "Cerrar menu" : "Abrir menu"}
+            aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
             className="action-button grid size-11 shrink-0 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-950"
           >
             {menuOpen ? <X size={21} /> : <Menu size={21} />}
@@ -655,7 +669,7 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
           </span>
           <span className="min-w-0">
             <span className="block truncate text-base font-black uppercase leading-tight tracking-wide sm:text-lg">{settings.businessName}</span>
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Botilleria delivery</span>
+            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Botillería delivery</span>
           </span>
           </a>
         </div>
@@ -672,7 +686,7 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
       </div>
       <div className="border-t border-neutral-200/70 bg-white/80">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
-          <span className="text-xs font-black uppercase text-neutral-500">Encuentranos</span>
+          <span className="text-xs font-black uppercase text-neutral-500">Encuéntranos</span>
           <SocialLinks settings={settings} className="flex" />
         </div>
       </div>
@@ -730,16 +744,18 @@ function SocialIcon({ href, label, children }: { href: string; label: string; ch
 
 function FloatingWhatsApp({ whatsappNumber }: { whatsappNumber: string }) {
   return (
-    <a
-      href={`https://wa.me/${whatsappNumber.replace(/\D/g, "")}`}
-      target="_blank"
-      rel="noreferrer"
-      aria-label="Hablar por WhatsApp"
-      title="Hablar por WhatsApp"
-      className="action-button fixed bottom-5 left-3 z-40 grid size-12 place-items-center rounded-full border-2 border-white bg-green-600 text-white shadow-lg hover:bg-green-700 sm:left-5 sm:size-14"
-    >
-      <FaWhatsapp size={25} />
-    </a>
+    <div className="fixed left-3 top-1/2 z-40 -translate-y-1/2 sm:left-5">
+      <a
+        href={`https://wa.me/${whatsappNumber.replace(/\D/g, "")}`}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Hablar por WhatsApp"
+        title="Hablar por WhatsApp"
+        className="action-button grid size-12 place-items-center rounded-full border-2 border-white bg-green-600 text-white shadow-lg hover:bg-green-700 sm:size-14"
+      >
+        <FaWhatsapp size={25} />
+      </a>
+    </div>
   );
 }
 
@@ -770,12 +786,14 @@ function CatalogToolbar(props: {
   setQuery: (value: string) => void;
   activeCategory: CategoryId;
   setActiveCategory: (value: CategoryId) => void;
+  activeBeerFormat: "all" | "latas" | "botellas";
+  setActiveBeerFormat: (value: "all" | "latas" | "botellas") => void;
 }) {
   return (
     <>
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h2 className="text-3xl font-black">Catalogo</h2>
+          <h2 className="text-3xl font-black">Catálogo</h2>
           <p className="mt-1 text-neutral-600">Ordenado por secciones y listo para comprar.</p>
         </div>
         <label className="relative block w-full lg:max-w-sm">
@@ -802,6 +820,26 @@ function CatalogToolbar(props: {
           </button>
         ))}
       </div>
+      {props.activeCategory === "cervezas" ? (
+        <div className="mb-5 flex gap-2">
+          {([
+            ["all", "Todas"],
+            ["latas", "Latas"],
+            ["botellas", "Botellas"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => props.setActiveBeerFormat(value)}
+              className={`h-9 rounded-lg px-3 text-xs font-black uppercase ${
+                props.activeBeerFormat === value ? "bg-red-600 text-white" : "border border-neutral-300 bg-white"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </>
   );
 }
@@ -823,7 +861,7 @@ function FeaturedProduct({ product, onAdd, added }: { product: Product; onAdd: (
         <span className="mt-1 block truncate text-lg font-black sm:text-xl">{product.name}</span>
         <span className="mt-1 block text-sm text-neutral-600">{product.volume}</span>
         <span className="mt-3 flex items-center justify-between gap-2">
-          <span className="text-xl font-black sm:text-2xl">{formatCurrency(product.price)}</span>
+          <ProductPrice product={product} featured />
           <span className={`grid size-10 shrink-0 place-items-center rounded-lg text-white transition ${added ? "bg-green-600" : "bg-neutral-950"}`}>
             {added ? <Check size={19} /> : <Plus size={19} />}
           </span>
@@ -836,29 +874,30 @@ function FeaturedProduct({ product, onAdd, added }: { product: Product; onAdd: (
 function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () => void; added: boolean }) {
   const soldOut = product.stock === "sold_out";
   return (
-    <article className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
-      <div className="relative aspect-[4/3] bg-neutral-100">
+    <article className="grid min-w-0 grid-cols-[112px_minmax(0,1fr)] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm sm:block">
+      <div className="relative min-h-full bg-neutral-100 sm:aspect-[4/3]">
         <img src={product.imageUrl} alt="" className="h-full w-full object-cover" />
         {soldOut ? (
           <span className="absolute left-3 top-3 rounded-md bg-red-600 px-2 py-1 text-xs font-black text-white">AGOTADO</span>
         ) : product.stock === "low" ? (
-          <span className="absolute left-3 top-3 rounded-md bg-amber-300 px-2 py-1 text-xs font-black text-neutral-950">Ultimas unidades</span>
+          <span className="absolute left-3 top-3 rounded-md bg-amber-300 px-2 py-1 text-xs font-black text-neutral-950">Últimas unidades</span>
         ) : null}
       </div>
-      <div className="p-4">
-        <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="min-w-0 p-3 sm:p-4">
+        <div className="mb-2 flex flex-col gap-1 sm:mb-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0">
-            <h3 className="truncate text-lg font-black leading-tight">{product.name}</h3>
-            <p className="mt-1 text-sm font-semibold text-neutral-500">{product.volume}</p>
+            <h3 className="line-clamp-2 text-base font-black leading-tight sm:truncate sm:text-lg">{product.name}</h3>
+            <p className="mt-1 text-xs font-semibold text-neutral-500 sm:text-sm">{product.volume}</p>
+            {product.category === "cervezas" && product.beerFormat ? <p className="mt-1 text-xs font-black uppercase text-red-600">{product.beerFormat}</p> : null}
           </div>
-          <span className="shrink-0 text-lg font-black text-red-600">{formatCurrency(product.price)}</span>
+          <ProductPrice product={product} />
         </div>
-        <p className="min-h-10 text-sm leading-5 text-neutral-600">{product.description}</p>
+        <p className="line-clamp-2 text-xs leading-4 text-neutral-600 sm:min-h-10 sm:text-sm sm:leading-5">{product.description}</p>
         <button
           type="button"
           onClick={onAdd}
           disabled={soldOut}
-          className={`action-button mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-600 ${
+          className={`action-button mt-3 flex h-9 w-full items-center justify-center gap-1 rounded-lg text-xs font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-600 sm:mt-4 sm:h-11 sm:gap-2 sm:text-sm ${
             added ? "bg-green-600" : "bg-neutral-950 hover:bg-red-600"
           }`}
         >
@@ -867,6 +906,20 @@ function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () =>
         </button>
       </div>
     </article>
+  );
+}
+
+function ProductPrice({ product, featured = false }: { product: Product; featured?: boolean }) {
+  const hasDiscount = Boolean(product.originalPrice && product.originalPrice > product.price);
+  return (
+    <span className="shrink-0">
+      {hasDiscount ? (
+        <span className="block text-xs font-bold text-neutral-400 line-through">{formatCurrency(product.originalPrice!)}</span>
+      ) : null}
+      <span className={`block font-black text-red-600 ${featured ? "text-xl sm:text-2xl" : "text-base sm:text-lg"}`}>
+        {formatCurrency(product.price)}
+      </span>
+    </span>
   );
 }
 
@@ -901,6 +954,7 @@ function CheckoutPanel(props: {
     location: { lat: number; lng: number };
   }) => void;
 }) {
+  const manualMode = !props.deliveryEnabled || props.customer.manualAddress;
   return (
     <aside id="checkout" className="min-w-0 lg:sticky lg:top-24 lg:self-start">
       <form onSubmit={props.onSubmit} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
@@ -947,11 +1001,11 @@ function CheckoutPanel(props: {
         <div className="mt-4 grid gap-3">
           <Input label="Nombre" value={props.customer.name} onChange={(value) => props.onCustomer("name", value)} required />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Input label="Telefono" type="tel" inputMode="numeric" value={props.customer.phone} onChange={(value) => props.onCustomer("phone", value)} required />
+            <Input label="Teléfono" type="tel" inputMode="numeric" value={props.customer.phone} onChange={(value) => props.onCustomer("phone", value)} required />
             <Input label="Email" type="email" value={props.customer.email} onChange={(value) => props.onCustomer("email", value)} required />
           </div>
-          {props.deliveryEnabled ? (
-            <>
+          <>
+              {props.deliveryEnabled ? (
               <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-sm font-bold">
                 <input
                   type="checkbox"
@@ -960,6 +1014,12 @@ function CheckoutPanel(props: {
                 />
                 Ingresar dirección manualmente
               </label>
+              ) : (
+                <div className="rounded-lg border border-green-200 bg-green-50 p-3">
+                  <p className="font-black text-green-900">Despacho manual sin cobro</p>
+                  <p className="mt-1 text-sm text-green-800">Ingresa la dirección y zona. El precio de despacho no se mostrará ni se sumará al pedido.</p>
+                </div>
+              )}
               <label className="grid gap-1 text-sm font-bold">
                 Dirección
                 <div className="flex gap-2">
@@ -967,17 +1027,17 @@ function CheckoutPanel(props: {
                     value={props.customer.address}
                     onChange={(event) => props.onCustomer("address", event.target.value)}
                     className="h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 font-medium"
-                    placeholder={props.customer.manualAddress ? "Calle y número" : "Busca tu calle y número"}
+                    placeholder={manualMode ? "Calle y número" : "Busca tu calle y número"}
                     required
                   />
-                  {!props.customer.manualAddress ? (
+                  {!manualMode ? (
                     <button type="button" onClick={props.onDetectZone} title="Buscar dirección" className="action-button grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
                       <Search size={18} />
                     </button>
                   ) : null}
                 </div>
               </label>
-              {!props.customer.manualAddress && props.addressResults.length ? (
+              {!manualMode && props.addressResults.length ? (
                 <div className="grid gap-2 rounded-lg border border-neutral-200 bg-white p-2 shadow-lg">
                   {props.addressResults.map((result) => (
                     <button
@@ -992,34 +1052,29 @@ function CheckoutPanel(props: {
                 </div>
               ) : null}
               {props.zoneStatus ? <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{props.zoneStatus}</p> : null}
-              {props.customer.manualAddress ? (
+              {manualMode ? (
                 <>
                   <Input label="Ciudad" value={props.customer.city} onChange={(value) => props.onCustomer("city", value)} required />
                   <Input label="Departamento, casa, referencia (opcional)" value={props.customer.addressExtra} onChange={(value) => props.onCustomer("addressExtra", value)} />
                   <label className="grid gap-1 text-sm font-bold">
                     Zona de despacho
-                    <select value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
+                    <select required value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
+                      <option value="">-</option>
                       {props.deliveryZones.map((zone) => (
                         <option key={zone.id} value={zone.id}>
-                          {zone.name} - {formatCurrency(zone.price)}
+                          {zone.name}{props.deliveryEnabled ? ` - ${formatCurrency(zone.price)}` : ""}
                         </option>
                       ))}
                     </select>
                   </label>
                 </>
               ) : null}
-              {!props.customer.manualAddress ? (
+              {!manualMode ? (
                 <p className="text-xs font-semibold text-neutral-500">
                   Búsqueda por <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a>.
                 </p>
               ) : null}
             </>
-          ) : (
-            <div className="rounded-lg border border-green-200 bg-green-50 p-3">
-              <p className="font-black text-green-900">Despacho sin calculo automatico</p>
-              <p className="mt-1 text-sm text-green-800">La entrega y direccion se coordinaran directamente por WhatsApp. Costo de despacho: $0.</p>
-            </div>
-          )}
           <label className="grid gap-1 text-sm font-bold">
             Notas
             <textarea value={props.customer.notes} onChange={(event) => props.onCustomer("notes", event.target.value)} className="min-h-20 rounded-lg border border-neutral-300 px-3 py-2 font-medium" />
@@ -1203,7 +1258,7 @@ function AdminPanel(props: {
         <form onSubmit={submitLogin} className="mx-auto max-w-sm rounded-lg border border-neutral-200 bg-[#f7f4ef] p-5">
           <h2 className="mb-4 flex items-center gap-2 text-2xl font-black">
             <LogIn size={22} />
-            Administracion
+            Administración
           </h2>
           <Input label="Usuario" value={login.username} onChange={(value) => setLogin({ ...login, username: value })} />
           <div className="mt-3">
@@ -1241,7 +1296,7 @@ function AdminPanel(props: {
           </div>
           <div className="flex flex-wrap gap-2">
             <SegmentButton active={props.adminView === "orders"} onClick={() => props.setAdminView("orders")}>Pedidos</SegmentButton>
-            <SegmentButton active={props.adminView === "catalog"} onClick={() => props.setAdminView("catalog")}>Catalogo</SegmentButton>
+            <SegmentButton active={props.adminView === "catalog"} onClick={() => props.setAdminView("catalog")}>Catálogo</SegmentButton>
             <SegmentButton active={props.adminView === "zones"} onClick={() => props.setAdminView("zones")}>Zonas</SegmentButton>
             <SegmentButton active={props.adminView === "faqs"} onClick={() => props.setAdminView("faqs")}>FAQ</SegmentButton>
             <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
@@ -1284,6 +1339,12 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
     }
   }
 
+  async function deleteOrder(order: SavedOrder) {
+    if (!window.confirm(`¿Eliminar definitivamente el pedido ${order.orderNumber}?`)) return;
+    const response = await fetch(`/api/orders/${order.id}`, { method: "DELETE" });
+    if (response.ok) setOrders(orders.filter((item) => item.id !== order.id));
+  }
+
   if (!orders.length) {
     return <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center font-bold text-neutral-500">Aún no hay pedidos registrados.</div>;
   }
@@ -1298,19 +1359,46 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
               <h3 className="text-xl font-black">{order.customerName}</h3>
               <p className="mt-1 text-sm text-neutral-600">{new Date(order.createdAt).toLocaleString("es-CL")}</p>
             </div>
-            <a
-              href={`https://wa.me/${normalizeChilePhone(order.customerPhone)}?text=${encodeURIComponent(`Hola ${order.customerName}, te contactamos por tu pedido ${order.orderNumber}.`)}`}
-              target="_blank"
-              rel="noreferrer"
-              className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-green-600 px-4 text-sm font-black text-white"
-            >
-              <FaWhatsapp size={19} /> Hablar por WhatsApp
-            </a>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href={`https://wa.me/${normalizeChilePhone(order.customerPhone)}?text=${encodeURIComponent(`Hola ${order.customerName}, te contactamos por tu pedido ${order.orderNumber}.`)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-green-600 px-4 text-sm font-black text-white"
+              >
+                <FaWhatsapp size={19} /> WhatsApp
+              </a>
+              <button
+                type="button"
+                onClick={() => void deleteOrder(order)}
+                className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-red-50 px-4 text-sm font-black text-red-700"
+              >
+                <Trash2 size={18} /> Eliminar
+              </button>
+            </div>
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="min-w-0">
               <p className="break-words text-sm font-semibold">{order.address}{order.city ? `, ${order.city}` : ""}</p>
               {order.addressExtra ? <p className="text-sm text-neutral-600">{order.addressExtra}</p> : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <a
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([order.address, order.city, order.addressExtra].filter(Boolean).join(", "))}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="action-button flex h-10 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-black text-blue-800"
+                >
+                  <SiGooglemaps className="text-[#4285F4]" size={18} /> Google Maps
+                </a>
+                <a
+                  href={`https://www.waze.com/ul?q=${encodeURIComponent([order.address, order.city, order.addressExtra].filter(Boolean).join(", "))}&navigate=yes`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="action-button flex h-10 items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 text-sm font-black text-cyan-900"
+                >
+                  <SiWaze className="text-[#33CCFF]" size={19} /> Waze
+                </a>
+              </div>
               <p className="mt-2 text-sm">{order.customerPhone} · {order.customerEmail}</p>
               <div className="mt-3 grid gap-1 rounded-lg bg-neutral-50 p-3 text-sm">
                 {order.items.map((item) => <p key={`${order.id}-${item.name}`}>{item.quantity}x {item.name} · {formatCurrency(item.lineTotal)}</p>)}
@@ -1375,11 +1463,13 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
           <div className="grid gap-3">
             <Input label="Nombre" value={props.draft.name} onChange={(value) => props.setDraft({ ...props.draft, name: value })} />
             <Input label="Precio" type="number" value={String(props.draft.price || "")} onChange={(value) => props.setDraft({ ...props.draft, price: Number(value) })} />
-            <SelectCategory value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category })} />
+            <Input label="Precio original (opcional)" type="number" value={props.draft.originalPrice ? String(props.draft.originalPrice) : ""} onChange={(value) => props.setDraft({ ...props.draft, originalPrice: value ? Number(value) : null })} />
+            <SelectCategory value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category, beerFormat: category === "cervezas" ? props.draft.beerFormat || "latas" : null })} />
+            {props.draft.category === "cervezas" ? <SelectBeerFormat value={props.draft.beerFormat || "latas"} onChange={(beerFormat) => props.setDraft({ ...props.draft, beerFormat })} /> : null}
             <Input label="Formato" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
             <ImagePicker label="Cargar imagen desde PC" onImage={(imageUrl) => props.setDraft({ ...props.draft, imageUrl })} />
             <Input label="Foto URL" value={props.draft.imageUrl} onChange={(value) => props.setDraft({ ...props.draft, imageUrl: value })} />
-            <Textarea label="Descripcion" value={props.draft.description} onChange={(value) => props.setDraft({ ...props.draft, description: value })} />
+            <Textarea label="Descripción" value={props.draft.description} onChange={(value) => props.setDraft({ ...props.draft, description: value })} />
             <button className="flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
               <Check size={18} />
               Guardar producto
@@ -1418,7 +1508,13 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               </div>
               <div className="grid gap-2">
                 <input value={product.price} type="number" onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, price: Number(event.target.value) }))} onBlur={() => void props.onSaveProduct(product)} className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold" />
-                <SelectCategory value={product.category} onChange={(category) => props.updateProduct(product.id, (item) => ({ ...item, category }))} onBlur={() => void props.onSaveProduct(product)} />
+                <input value={product.originalPrice || ""} type="number" placeholder="Precio original" onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, originalPrice: event.target.value ? Number(event.target.value) : null }))} onBlur={() => void props.onSaveProduct(product)} className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold" />
+                <SelectCategory value={product.category} onChange={(category) => props.updateProduct(product.id, (item) => ({ ...item, category, beerFormat: category === "cervezas" ? item.beerFormat || "latas" : null }))} onBlur={() => void props.onSaveProduct(product)} />
+                {product.category === "cervezas" ? <SelectBeerFormat value={product.beerFormat || "latas"} onChange={(beerFormat) => {
+                  const nextProduct = { ...product, beerFormat };
+                  props.updateProduct(product.id, () => nextProduct);
+                  void props.onSaveProduct(nextProduct);
+                }} /> : null}
                 <select value={product.stock} onChange={(event) => {
                   const stock = event.target.value as Product["stock"];
                   const nextProduct = { ...product, stock };
@@ -1504,14 +1600,14 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
         <h3 className="mb-4 flex items-center gap-2 text-lg font-black"><MapPin size={18} /> Nueva zona</h3>
         <div className="grid gap-3">
           <Input label="Nombre" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
-          <Input label="Precio despacho" type="number" value={String(draft.price || "")} onChange={(value) => setDraft({ ...draft, price: Number(value) })} />
+          <Input label="Precio despacho" type="number" value={String(draft.price)} onChange={(value) => setDraft({ ...draft, price: value === "" ? 0 : Number(value) })} />
           <Input label="Tiempo estimado" value={draft.eta} onChange={(eta) => setDraft({ ...draft, eta })} />
           <Input
             label="Comunas o palabras para detectar"
             value={draft.matchTerms.join(", ")}
             onChange={(value) => setDraft({ ...draft, matchTerms: value.split(",").map((term) => term.trim()).filter(Boolean) })}
           />
-          <Textarea label="Descripcion" value={draft.description} onChange={(description) => setDraft({ ...draft, description })} />
+          <Textarea label="Descripción" value={draft.description} onChange={(description) => setDraft({ ...draft, description })} />
           <button className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
             <Save size={18} /> Guardar zona
           </button>
@@ -1584,19 +1680,27 @@ function SettingsAdmin({
       <Input label="Instagram" value={draft.instagramUrl} onChange={(value) => setDraft({ ...draft, instagramUrl: value })} />
       <Input label="Facebook" value={draft.facebookUrl} onChange={(value) => setDraft({ ...draft, facebookUrl: value })} />
       <Input label="Link Mercado Pago" value={draft.mercadoPagoLink} onChange={(value) => setDraft({ ...draft, mercadoPagoLink: value })} />
-      <label className={`flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-black ${draft.maintenanceMode ? "bg-red-50 text-red-800" : "bg-green-50 text-green-800"}`}>
-        <input type="checkbox" checked={draft.maintenanceMode} onChange={(event) => setDraft({ ...draft, maintenanceMode: event.target.checked })} />
-        {draft.maintenanceMode ? "Modo mantenimiento activado" : "Sitio activo"}
-      </label>
-      <label className={`flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-black ${draft.deliveryEnabled ? "bg-green-50 text-green-800" : "bg-amber-50 text-amber-900"}`}>
-        <input type="checkbox" checked={draft.deliveryEnabled} onChange={(event) => setDraft({ ...draft, deliveryEnabled: event.target.checked })} />
-        {draft.deliveryEnabled ? "Calculo de despacho activado" : "Despacho sin direccion ni cobro"}
-      </label>
+      <BooleanControl
+        label="Modo mantenimiento"
+        value={draft.maintenanceMode}
+        onChange={(maintenanceMode) => setDraft({ ...draft, maintenanceMode })}
+        activeLabel="Activar"
+        inactiveLabel="Desactivar"
+        activeTone="danger"
+      />
+      <BooleanControl
+        label="Cálculo y cobro de despacho"
+        value={draft.deliveryEnabled}
+        onChange={(deliveryEnabled) => setDraft({ ...draft, deliveryEnabled })}
+        activeLabel="Activar"
+        inactiveLabel="Desactivar"
+        activeTone="success"
+      />
       <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
-        Si activas mantenimiento, los clientes veran una pantalla cerrada y solo quedara disponible el login del administrador.
+        Si activas mantenimiento, los clientes verán una pantalla cerrada y solo quedará disponible el inicio de sesión del administrador.
       </p>
       <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
-        Si desactivas el calculo de despacho, se mantienen contacto, notas, pago y pedido. Solo se ocultan direccion, zona y costo de envio.
+        Si desactivas el cálculo de despacho, igualmente se solicitarán dirección, ciudad y zona, pero el costo será $0 y no se mostrará al cliente.
       </p>
       <div className="lg:col-span-2">
         <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
@@ -1604,7 +1708,7 @@ function SettingsAdmin({
       <Input label="Banco" value={draft.bankDetails.bank} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, bank: value } })} />
       <Input label="Titular" value={draft.bankDetails.accountHolder} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountHolder: value } })} />
       <Input label="Tipo de cuenta" value={draft.bankDetails.accountType} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountType: value } })} />
-      <Input label="Numero de cuenta" value={draft.bankDetails.accountNumber} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountNumber: value } })} />
+      <Input label="Número de cuenta" value={draft.bankDetails.accountNumber} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountNumber: value } })} />
       <Input label="RUT" value={draft.bankDetails.rut} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, rut: value } })} />
       <Input label="Correo pagos" type="email" value={draft.bankDetails.email} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, email: value } })} />
       <button
@@ -1617,6 +1721,47 @@ function SettingsAdmin({
         {syncStatus === "syncing" ? "Guardando..." : syncStatus === "saved" ? "Ajustes guardados" : syncStatus === "error" ? "Reintentar guardado" : "Guardar ajustes"}
       </button>
     </form>
+  );
+}
+
+function BooleanControl({
+  label,
+  value,
+  onChange,
+  activeLabel,
+  inactiveLabel,
+  activeTone,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+  activeLabel: string;
+  inactiveLabel: string;
+  activeTone: "success" | "danger";
+}) {
+  const activeClass = activeTone === "danger" ? "bg-red-600 text-white" : "bg-green-600 text-white";
+  return (
+    <fieldset className="rounded-lg border border-neutral-200 bg-white p-3">
+      <legend className="px-1 text-sm font-black">{label}</legend>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          aria-pressed={value}
+          onClick={() => onChange(true)}
+          className={`action-button h-10 rounded-lg text-sm font-black ${value ? activeClass : "bg-neutral-100 text-neutral-600"}`}
+        >
+          {activeLabel}
+        </button>
+        <button
+          type="button"
+          aria-pressed={!value}
+          onClick={() => onChange(false)}
+          className={`action-button h-10 rounded-lg text-sm font-black ${!value ? "bg-neutral-950 text-white" : "bg-neutral-100 text-neutral-600"}`}
+        >
+          {inactiveLabel}
+        </button>
+      </div>
+    </fieldset>
   );
 }
 
@@ -1641,10 +1786,10 @@ function MaintenanceScreen({ message }: { message: string }) {
         </div>
         <div className="p-5">
           <h2 className="mb-2 text-2xl font-black">Acceso administrador</h2>
-          <p className="mb-5 text-sm font-semibold text-neutral-600">El sitio esta cerrado para clientes. Inicia sesion para volver a activar la tienda.</p>
+          <p className="mb-5 text-sm font-semibold text-neutral-600">El sitio está cerrado para clientes. Inicia sesión para volver a activar la tienda.</p>
           <Link href="/admin" className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
             <LogIn size={18} />
-            Iniciar sesion
+            Iniciar sesión
           </Link>
         </div>
       </div>
@@ -1694,16 +1839,16 @@ function InfoSections({ settings }: { settings: SiteSettings }) {
           </div>
         </section>
         <section id="terminos" className="rounded-lg border border-neutral-200 bg-neutral-950 p-6 text-white">
-          <h2 className="mb-4 text-3xl font-black">Terminos</h2>
+          <h2 className="mb-4 text-3xl font-black">Términos</h2>
           <div className="grid gap-4 text-sm leading-7 text-neutral-300">
-            <p>Venta exclusiva para mayores de 18 anos. La entrega puede requerir cedula de identidad.</p>
-            <p>La disponibilidad, precios y tiempos de despacho pueden variar hasta la confirmacion final por WhatsApp.</p>
+            <p>Venta exclusiva para mayores de 18 años. La entrega puede requerir cédula de identidad.</p>
+            <p>La disponibilidad, precios y tiempos de despacho pueden variar hasta la confirmación final por WhatsApp.</p>
             <p>El link de MercadoPago funciona como pago externo hasta configurar credenciales reales.</p>
             <p>Las direcciones manuales quedan sujetas a cobertura y costo de despacho confirmado por el local.</p>
           </div>
           <div className="mt-6 flex items-center gap-2 rounded-lg bg-white/10 p-3 text-sm font-bold text-amber-100">
             <AlertTriangle size={18} />
-            Beber alcohol en exceso es danino para la salud.
+            Beber alcohol en exceso es dañino para la salud.
           </div>
         </section>
       </div>
@@ -1726,8 +1871,8 @@ function AgeGate({ onConfirm }: { onConfirm: () => void }) {
         <div className="mx-auto mb-4 grid size-14 place-items-center rounded-lg bg-red-600 text-white">
           <ShieldCheck size={28} />
         </div>
-        <h2 className="text-2xl font-black">Solo mayores de 18 anos</h2>
-        <p className="mt-3 leading-7 text-neutral-600">Los tiempos de espera son referenciales y pueden cambiar segun demanda, distancia y disponibilidad.</p>
+        <h2 className="text-2xl font-black">Solo mayores de 18 años</h2>
+        <p className="mt-3 leading-7 text-neutral-600">Los tiempos de espera son referenciales y pueden cambiar según demanda, distancia y disponibilidad.</p>
         <button type="button" onClick={onConfirm} className="mt-6 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
           <BadgeCheck size={18} />
           Soy mayor de 18
@@ -1816,6 +1961,18 @@ function SelectCategory(props: { value: CategoryId; onChange: (value: CategoryId
             {category.label}
           </option>
         ))}
+      </select>
+    </label>
+  );
+}
+
+function SelectBeerFormat(props: { value: "latas" | "botellas"; onChange: (value: "latas" | "botellas") => void }) {
+  return (
+    <label className="grid gap-1 text-sm font-bold">
+      Formato de cerveza
+      <select value={props.value} onChange={(event) => props.onChange(event.target.value as "latas" | "botellas")} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-bold">
+        <option value="latas">Latas</option>
+        <option value="botellas">Botellas</option>
       </select>
     </label>
   );

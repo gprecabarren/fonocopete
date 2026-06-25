@@ -10,6 +10,8 @@ const productSchema = z.object({
   name: z.string().min(1),
   category: z.enum(["promociones", "cervezas", "piscos", "vinos", "destilados", "extras"]),
   price: z.number().int().nonnegative(),
+  originalPrice: z.number().int().nonnegative().nullable().optional(),
+  beerFormat: z.enum(["latas", "botellas"]).nullable().optional(),
   imageUrl: z.string(),
   volume: z.string(),
   description: z.string(),
@@ -25,7 +27,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const [{ id }, parsed] = await Promise.all([context.params, productSchema.safeParseAsync(await request.json())]);
 
   if (!parsed.success || parsed.data.id !== id) {
-    return NextResponse.json({ error: "Producto invalido" }, { status: 400 });
+    return NextResponse.json({ error: "Producto inválido" }, { status: 400 });
   }
 
   const supabase = createServerSupabaseClient();
@@ -38,7 +40,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     .from("products")
     .update(mapProductToRow(parsed.data as Product))
     .eq("id", id)
-    .select("id,name,category_id,price,image_url,volume,description,stock,featured")
+    .select("id,name,category_id,price,original_price,beer_format,image_url,volume,description,stock,featured")
     .single();
 
   if (error) {

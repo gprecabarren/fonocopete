@@ -9,7 +9,7 @@ export const defaultSettings: SiteSettings = {
   maintenanceMode: forceMaintenance,
   deliveryEnabled: true,
   maintenanceMessage:
-    "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Intentalo nuevamente mas tarde.",
+    "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Inténtalo nuevamente más tarde.",
   whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56939351855",
   contactEmail: "fonocopeteconcepcion.maverik@gmail.com",
   instagramUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",

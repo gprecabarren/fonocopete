@@ -88,7 +88,7 @@ export async function POST(request: Request) {
   const parsed = orderSchema.safeParse(await request.json());
 
   if (!parsed.success) {
-    return NextResponse.json({ error: "Pedido invalido" }, { status: 400 });
+    return NextResponse.json({ error: "Pedido inválido" }, { status: 400 });
   }
 
   const order: OrderPayload = parsed.data;
@@ -159,9 +159,9 @@ export async function POST(request: Request) {
     html: `
       <h1>Nuevo pedido</h1>
       <p><strong>Cliente:</strong> ${order.customer.name}</p>
-      <p><strong>Telefono:</strong> ${order.customer.phone}</p>
+      <p><strong>Teléfono:</strong> ${order.customer.phone}</p>
       <p><strong>Email:</strong> ${order.customer.email}</p>
-      <p><strong>Direccion:</strong> ${order.customer.address}</p>
+      <p><strong>Dirección:</strong> ${order.customer.address}</p>
       <p><strong>Ciudad:</strong> ${order.customer.city}</p>
       <p><strong>Complemento:</strong> ${order.customer.addressExtra || "Sin complemento"}</p>
       <p><strong>Zona:</strong> ${order.zoneName}</p>
@@ -174,13 +174,13 @@ export async function POST(request: Request) {
   await transporter.sendMail({
     from: `"Fonocopete MAVERIK" <${gmailUser}>`,
     to: order.customer.email,
-    subject: "Confirmacion de pedido Fonocopete",
+    subject: "Confirmación de pedido Fonocopete",
     html: `
       <h1>Recibimos tu pedido</h1>
-      <p>Hola ${order.customer.name}, tu pedido fue enviado a la botilleria para confirmacion.</p>
+      <p>Hola ${order.customer.name}, tu pedido fue enviado a la botillería para confirmación.</p>
       <p>${itemRows}</p>
       <p><strong>Total:</strong> $${order.total}</p>
-      <p>Si aun no pagaste, usa este link: <a href="${order.paymentLink}">MercadoPago</a>.</p>
+      <p>Si aún no pagaste, usa este enlace: <a href="${order.paymentLink}">Mercado Pago</a>.</p>
     `,
   });
 
