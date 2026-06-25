@@ -4,7 +4,9 @@
 
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   BadgeCheck,
   Beer,
   Bike,
@@ -18,7 +20,6 @@ import {
   MapPin,
   Mail,
   Menu,
-  MessageCircle,
   Minus,
   Plus,
   Save,
@@ -28,14 +29,13 @@ import {
   ShoppingCart,
   Trash2,
   Upload,
-  Wine,
   Wrench,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa";
-import { SiGooglemaps, SiMercadopago, SiWaze } from "react-icons/si";
+import { SiGooglemaps, SiMercadopago, SiUbereats, SiWaze } from "react-icons/si";
 import { categories, deliveryZones as initialDeliveryZones, initialProducts } from "@/lib/catalog";
 import { findZoneByAddress, findZoneByCoordinates } from "@/lib/delivery";
 import { formatCurrency, normalizeText } from "@/lib/format";
@@ -49,6 +49,7 @@ import type {
   FaqItem,
   OrderPayload,
   Product,
+  ProductCategory,
   SavedOrder,
   SiteSettings,
 } from "@/lib/types";
@@ -56,6 +57,27 @@ import type {
 const catalogStorageKey = "fonocopete.catalog";
 const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
+
+const latinAmericanPhones = [
+  { code: "56", country: "Chile", flag: "🇨🇱", placeholder: "9 1234 5678" },
+  { code: "54", country: "Argentina", flag: "🇦🇷", placeholder: "9 11 1234 5678" },
+  { code: "51", country: "Perú", flag: "🇵🇪", placeholder: "912 345 678" },
+  { code: "57", country: "Colombia", flag: "🇨🇴", placeholder: "300 123 4567" },
+  { code: "52", country: "México", flag: "🇲🇽", placeholder: "55 1234 5678" },
+  { code: "58", country: "Venezuela", flag: "🇻🇪", placeholder: "412 123 4567" },
+  { code: "593", country: "Ecuador", flag: "🇪🇨", placeholder: "99 123 4567" },
+  { code: "591", country: "Bolivia", flag: "🇧🇴", placeholder: "7123 4567" },
+  { code: "595", country: "Paraguay", flag: "🇵🇾", placeholder: "981 123 456" },
+  { code: "598", country: "Uruguay", flag: "🇺🇾", placeholder: "94 123 456" },
+  { code: "55", country: "Brasil", flag: "🇧🇷", placeholder: "11 91234 5678" },
+  { code: "506", country: "Costa Rica", flag: "🇨🇷", placeholder: "8312 3456" },
+  { code: "507", country: "Panamá", flag: "🇵🇦", placeholder: "6123 4567" },
+  { code: "502", country: "Guatemala", flag: "🇬🇹", placeholder: "5123 4567" },
+  { code: "503", country: "El Salvador", flag: "🇸🇻", placeholder: "7123 4567" },
+  { code: "504", country: "Honduras", flag: "🇭🇳", placeholder: "9123 4567" },
+  { code: "505", country: "Nicaragua", flag: "🇳🇮", placeholder: "8123 4567" },
+  { code: "1809", country: "Rep. Dominicana", flag: "🇩🇴", placeholder: "234 5678" },
+] as const;
 
 const emptyCustomer: CustomerDetails = {
   name: "",
@@ -84,6 +106,7 @@ const productDraft: Product = {
 
 export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [products, setProducts] = useState<Product[]>(() => readLocal(catalogStorageKey, initialProducts));
+  const [productCategories, setProductCategories] = useState<ProductCategory[]>(categories);
   const [settings, setSettings] = useState<SiteSettings>(() => readLocal(settingsStorageKey, defaultSettings));
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<CategoryId>("promociones");
@@ -96,7 +119,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   );
   const [draft, setDraft] = useState<Product>(productDraft);
   const [bulkText, setBulkText] = useState("");
-  const [adminView, setAdminView] = useState<"orders" | "catalog" | "zones" | "faqs" | "settings">("orders");
+  const [adminView, setAdminView] = useState<"orders" | "catalog" | "categories" | "zones" | "faqs" | "settings">("orders");
   const [productSource, setProductSource] = useState<"local" | "supabase">("local");
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
@@ -124,11 +147,12 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
 
   useEffect(() => {
     async function boot() {
-      const [productResponse, settingsResponse, sessionResponse, zonesResponse] = await Promise.allSettled([
+      const [productResponse, settingsResponse, sessionResponse, zonesResponse, categoriesResponse] = await Promise.allSettled([
         fetch("/api/products"),
         fetch("/api/settings"),
         fetch("/api/admin/session"),
         fetch("/api/delivery-zones"),
+        fetch("/api/categories"),
       ]);
 
       if (productResponse.status === "fulfilled" && productResponse.value.ok) {
@@ -160,6 +184,22 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           setCustomer((current) => ({ ...current, zoneId: current.zoneId }));
         }
       }
+
+      if (categoriesResponse.status === "fulfilled" && categoriesResponse.value.ok) {
+        const data = (await categoriesResponse.value.json()) as { categories: ProductCategory[] };
+        if (data.categories.length) {
+          setProductCategories(data.categories);
+          setActiveCategory((current) =>
+            data.categories.some((category) => category.id === current) ? current : data.categories[0].id,
+          );
+          setDraft((current) => ({
+            ...current,
+            category: data.categories.some((category) => category.id === current.category)
+              ? current.category
+              : data.categories[0].id,
+          }));
+        }
+      }
     }
 
     void boot();
@@ -173,20 +213,23 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   const activeZones = deliveryZones.filter((zone) => zone.active);
+  const resolvedActiveCategory = productCategories.some((category) => category.id === activeCategory)
+    ? activeCategory
+    : productCategories[0]?.id || "promociones";
   const selectedZone = activeZones.find((zone) => zone.id === customer.zoneId);
   const activeZone = selectedZone ?? { ...initialDeliveryZones[0], id: "", name: "Sin zona", price: 0, eta: "Por coordinar" };
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
     return products.filter((product) => {
-      const matchesCategory = product.category === activeCategory;
+      const matchesCategory = product.category === resolvedActiveCategory;
       const matchesBeerFormat =
-        activeCategory !== "cervezas" || activeBeerFormat === "all" || product.beerFormat === activeBeerFormat;
+        resolvedActiveCategory !== "cervezas" || activeBeerFormat === "all" || product.beerFormat === activeBeerFormat;
       const matchesQuery =
         !cleanQuery ||
         normalizeText(`${product.name} ${product.description} ${product.volume}`).includes(cleanQuery);
       return product.stock !== "hidden" && matchesCategory && matchesBeerFormat && matchesQuery;
     });
-  }, [products, activeCategory, activeBeerFormat, query]);
+  }, [products, resolvedActiveCategory, activeBeerFormat, query]);
   const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden").slice(0, 2);
   const cartLines = cart
     .map((item) => {
@@ -283,7 +326,6 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo válido.";
     if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 dígitos en el teléfono.";
     if (customer.address.trim().length < 3) return "Ingresa tu dirección.";
-    if ((!settings.deliveryEnabled || customer.manualAddress) && customer.city.trim().length < 2) return "Ingresa la ciudad.";
     if ((!settings.deliveryEnabled || customer.manualAddress) && !customer.zoneId) return "Selecciona una zona de despacho.";
     return "";
   }
@@ -407,6 +449,9 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
 
     const nextProduct: Product = {
       ...draft,
+      category: productCategories.some((category) => category.id === draft.category)
+        ? draft.category
+        : productCategories[0]?.id || "promociones",
       id: draft.id || crypto.randomUUID(),
       imageUrl:
         draft.imageUrl ||
@@ -431,7 +476,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           id: crypto.randomUUID(),
           name,
           price: Number(price),
-          category: (category as CategoryId) || "promociones",
+          category: (category as CategoryId) || productCategories[0]?.id || "promociones",
           volume: volume || "Formato por definir",
           imageUrl:
             imageUrl ||
@@ -482,6 +527,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           setAuthenticated={setAdminAuthenticated}
           products={products}
           setProducts={setProducts}
+          categories={productCategories}
+          setCategories={setProductCategories}
           draft={draft}
           setDraft={setDraft}
           onSubmit={addDraftProduct}
@@ -528,20 +575,40 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       <section id="promociones" className="scroll-mt-20 bg-neutral-950 text-white">
         <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_0.78fr] lg:py-12">
           <div className="flex min-w-0 flex-col justify-center">
+            <img
+              src="/fonocopete-logo-horizontal.jpg"
+              alt="Fonocopete Maverik"
+              className="mb-5 h-auto w-full max-w-md rounded-lg bg-white object-contain p-2 sm:max-w-lg"
+            />
             <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
               <ShieldCheck size={17} />
               Solo mayores de 18 años
             </div>
-            <h1 className="max-w-3xl text-4xl font-black leading-tight sm:text-5xl lg:text-6xl">
-              {settings.businessName}
-            </h1>
+            <h1 className="sr-only">{settings.businessName}</h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-300 sm:text-lg">
               Catálogo vivo, carrito simple y confirmación por WhatsApp para comprar sin pedir PDF.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               <Metric icon={<Beer size={20} />} label="Catálogo" value={`${products.filter((p) => p.stock !== "hidden").length} productos`} />
-              <Metric icon={<Bike size={20} />} label="Despacho" value="Por zonas" />
-              <Metric icon={<MessageCircle size={20} />} label="Compra" value="WhatsApp" />
+              <Metric
+                icon={<Bike size={20} />}
+                label="Zonas habilitadas"
+                value={activeZones.length ? activeZones.map((zone) => zone.name).join(" · ") : "Por coordinar"}
+              />
+              <Metric
+                icon={<SiMercadopago size={22} className="text-sky-300" />}
+                label="Medios de pago"
+                value="Transferencia y Mercado Pago"
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black">
+              <span className="text-neutral-400">También coordinamos envíos por</span>
+              <span className="inline-flex h-8 items-center gap-2 rounded-md bg-white px-3 text-neutral-950">
+                <SiUbereats size={18} className="text-[#06C167]" /> Uber Eats
+              </span>
+              <span className="inline-flex h-8 items-center rounded-md bg-[#ea044e] px-3 text-white">
+                PedidosYa
+              </span>
             </div>
           </div>
           <div className="grid min-w-0 gap-4">
@@ -557,10 +624,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           <CatalogToolbar
             query={query}
             setQuery={setQuery}
-            activeCategory={activeCategory}
+            activeCategory={resolvedActiveCategory}
             setActiveCategory={setActiveCategory}
             activeBeerFormat={activeBeerFormat}
             setActiveBeerFormat={setActiveBeerFormat}
+            categories={productCategories}
           />
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filteredProducts.map((product) => (
@@ -664,9 +732,7 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
             {menuOpen ? <X size={21} /> : <Menu size={21} />}
           </button>
           <a href="#catalogo" className="flex min-w-0 items-center gap-3">
-          <span className="grid size-11 shrink-0 place-items-center rounded-lg bg-neutral-950 text-white">
-            <Wine size={22} />
-          </span>
+          <img src="/fonocopete-logo-circle.jpg" alt="" className="size-11 shrink-0 rounded-full border border-neutral-200 object-cover" />
           <span className="min-w-0">
             <span className="block truncate text-base font-black uppercase leading-tight tracking-wide sm:text-lg">{settings.businessName}</span>
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Botillería delivery</span>
@@ -788,6 +854,7 @@ function CatalogToolbar(props: {
   setActiveCategory: (value: CategoryId) => void;
   activeBeerFormat: "all" | "latas" | "botellas";
   setActiveBeerFormat: (value: "all" | "latas" | "botellas") => void;
+  categories: ProductCategory[];
 }) {
   return (
     <>
@@ -807,7 +874,7 @@ function CatalogToolbar(props: {
         </label>
       </div>
       <div className="mb-6 flex max-w-full gap-2 overflow-x-auto pb-2">
-        {categories.map((category) => (
+        {props.categories.map((category) => (
           <button
             key={category.id}
             type="button"
@@ -874,8 +941,8 @@ function FeaturedProduct({ product, onAdd, added }: { product: Product; onAdd: (
 function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () => void; added: boolean }) {
   const soldOut = product.stock === "sold_out";
   return (
-    <article className="grid min-w-0 grid-cols-[112px_minmax(0,1fr)] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm sm:block">
-      <div className="relative min-h-full bg-neutral-100 sm:aspect-[4/3]">
+    <article className="grid min-w-0 grid-cols-[112px_minmax(0,1fr)] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm sm:flex sm:h-full sm:flex-col">
+      <div className="relative min-h-full bg-neutral-100 sm:aspect-[16/10] sm:min-h-0">
         <img src={product.imageUrl} alt="" className="h-full w-full object-cover" />
         {soldOut ? (
           <span className="absolute left-3 top-3 rounded-md bg-red-600 px-2 py-1 text-xs font-black text-white">AGOTADO</span>
@@ -883,7 +950,7 @@ function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () =>
           <span className="absolute left-3 top-3 rounded-md bg-amber-300 px-2 py-1 text-xs font-black text-neutral-950">Últimas unidades</span>
         ) : null}
       </div>
-      <div className="min-w-0 p-3 sm:p-4">
+      <div className="min-w-0 p-3 sm:flex sm:flex-1 sm:flex-col sm:p-4">
         <div className="mb-2 flex flex-col gap-1 sm:mb-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
           <div className="min-w-0">
             <h3 className="line-clamp-2 text-base font-black leading-tight sm:truncate sm:text-lg">{product.name}</h3>
@@ -897,7 +964,7 @@ function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () =>
           type="button"
           onClick={onAdd}
           disabled={soldOut}
-          className={`action-button mt-3 flex h-9 w-full items-center justify-center gap-1 rounded-lg text-xs font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-600 sm:mt-4 sm:h-11 sm:gap-2 sm:text-sm ${
+          className={`action-button mt-3 flex h-9 w-full items-center justify-center gap-1 rounded-lg text-xs font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:text-neutral-600 sm:mt-auto sm:h-11 sm:gap-2 sm:text-sm ${
             added ? "bg-green-600" : "bg-neutral-950 hover:bg-red-600"
           }`}
         >
@@ -955,6 +1022,16 @@ function CheckoutPanel(props: {
   }) => void;
 }) {
   const manualMode = !props.deliveryEnabled || props.customer.manualAddress;
+  const [phoneCountry, setPhoneCountry] = useState("56");
+  const countryConfig = latinAmericanPhones.find((country) => country.code === phoneCountry) ?? latinAmericanPhones[0];
+  const phoneDigits = props.customer.phone.replace(/\D/g, "");
+  const localPhone = phoneDigits.startsWith(phoneCountry) ? phoneDigits.slice(phoneCountry.length) : phoneDigits;
+
+  function updatePhoneCountry(nextCode: string) {
+    setPhoneCountry(nextCode);
+    props.onCustomer("phone", localPhone ? `+${nextCode} ${localPhone}` : `+${nextCode} `);
+  }
+
   return (
     <aside id="checkout" className="min-w-0 lg:sticky lg:top-24 lg:self-start">
       <form onSubmit={props.onSubmit} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
@@ -1001,7 +1078,36 @@ function CheckoutPanel(props: {
         <div className="mt-4 grid gap-3">
           <Input label="Nombre" value={props.customer.name} onChange={(value) => props.onCustomer("name", value)} required />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Input label="Teléfono" type="tel" inputMode="numeric" value={props.customer.phone} onChange={(value) => props.onCustomer("phone", value)} required />
+            <label className="grid gap-1 text-sm font-bold">
+              Teléfono
+              <span className="flex min-w-0">
+                <select
+                  aria-label="País del teléfono"
+                  value={phoneCountry}
+                  onChange={(event) => updatePhoneCountry(event.target.value)}
+                  className="h-11 max-w-[116px] rounded-l-lg border border-r-0 border-neutral-300 bg-neutral-50 px-2 font-bold"
+                >
+                  {latinAmericanPhones.map((country) => (
+                    <option key={country.code} value={country.code}>
+                      {country.flag} +{country.code}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={localPhone}
+                  onChange={(event) => {
+                    const digits = event.target.value.replace(/\D/g, "");
+                    props.onCustomer("phone", `+${phoneCountry} ${digits}`);
+                  }}
+                  placeholder={countryConfig.placeholder}
+                  className="h-11 min-w-0 flex-1 rounded-r-lg border border-neutral-300 px-3 font-medium"
+                  required
+                />
+              </span>
+              {phoneCountry === "56" ? <span className="text-xs font-medium text-neutral-500">Ingresa los 9 dígitos, comenzando por 9.</span> : null}
+            </label>
             <Input label="Email" type="email" value={props.customer.email} onChange={(value) => props.onCustomer("email", value)} required />
           </div>
           <>
@@ -1054,10 +1160,9 @@ function CheckoutPanel(props: {
               {props.zoneStatus ? <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{props.zoneStatus}</p> : null}
               {manualMode ? (
                 <>
-                  <Input label="Ciudad" value={props.customer.city} onChange={(value) => props.onCustomer("city", value)} required />
                   <Input label="Departamento, casa, referencia (opcional)" value={props.customer.addressExtra} onChange={(value) => props.onCustomer("addressExtra", value)} />
                   <label className="grid gap-1 text-sm font-bold">
-                    Zona de despacho
+                    Zona de despacho / Ciudad
                     <select required value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
                       <option value="">-</option>
                       {props.deliveryZones.map((zone) => (
@@ -1207,14 +1312,16 @@ function AdminPanel(props: {
   setAuthenticated: (value: boolean) => void;
   products: Product[];
   setProducts: (products: Product[]) => void;
+  categories: ProductCategory[];
+  setCategories: (categories: ProductCategory[]) => void;
   draft: Product;
   setDraft: (draft: Product) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   bulkText: string;
   setBulkText: (value: string) => void;
   importBulkProducts: () => Promise<void>;
-  adminView: "orders" | "catalog" | "zones" | "faqs" | "settings";
-  setAdminView: (value: "orders" | "catalog" | "zones" | "faqs" | "settings") => void;
+  adminView: "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings";
+  setAdminView: (value: "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings") => void;
   productSource: "local" | "supabase";
   syncStatus: "idle" | "syncing" | "saved" | "error";
   onSaveProduct: (product: Product) => Promise<void>;
@@ -1297,6 +1404,7 @@ function AdminPanel(props: {
           <div className="flex flex-wrap gap-2">
             <SegmentButton active={props.adminView === "orders"} onClick={() => props.setAdminView("orders")}>Pedidos</SegmentButton>
             <SegmentButton active={props.adminView === "catalog"} onClick={() => props.setAdminView("catalog")}>Catálogo</SegmentButton>
+            <SegmentButton active={props.adminView === "categories"} onClick={() => props.setAdminView("categories")}>Categorías</SegmentButton>
             <SegmentButton active={props.adminView === "zones"} onClick={() => props.setAdminView("zones")}>Zonas</SegmentButton>
             <SegmentButton active={props.adminView === "faqs"} onClick={() => props.setAdminView("faqs")}>FAQ</SegmentButton>
             <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
@@ -1310,6 +1418,11 @@ function AdminPanel(props: {
           <OrdersAdmin orders={props.orders} setOrders={props.setOrders} />
         ) : props.adminView === "catalog" ? (
           <CatalogAdmin {...props} updateProduct={updateProduct} />
+        ) : props.adminView === "categories" ? (
+          <CategoriesAdmin
+            categories={props.categories}
+            setCategories={props.setCategories}
+          />
         ) : props.adminView === "zones" ? (
           <ZonesAdmin zones={props.deliveryZones} setZones={props.setDeliveryZones} />
         ) : props.adminView === "faqs" ? (
@@ -1464,7 +1577,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             <Input label="Nombre" value={props.draft.name} onChange={(value) => props.setDraft({ ...props.draft, name: value })} />
             <Input label="Precio" type="number" value={String(props.draft.price || "")} onChange={(value) => props.setDraft({ ...props.draft, price: Number(value) })} />
             <Input label="Precio original (opcional)" type="number" value={props.draft.originalPrice ? String(props.draft.originalPrice) : ""} onChange={(value) => props.setDraft({ ...props.draft, originalPrice: value ? Number(value) : null })} />
-            <SelectCategory value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category, beerFormat: category === "cervezas" ? props.draft.beerFormat || "latas" : null })} />
+            <SelectCategory categories={props.categories} value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category, beerFormat: category === "cervezas" ? props.draft.beerFormat || "latas" : null })} />
             {props.draft.category === "cervezas" ? <SelectBeerFormat value={props.draft.beerFormat || "latas"} onChange={(beerFormat) => props.setDraft({ ...props.draft, beerFormat })} /> : null}
             <Input label="Formato" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
             <ImagePicker label="Cargar imagen desde PC" onImage={(imageUrl) => props.setDraft({ ...props.draft, imageUrl })} />
@@ -1509,7 +1622,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               <div className="grid gap-2">
                 <input value={product.price} type="number" onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, price: Number(event.target.value) }))} onBlur={() => void props.onSaveProduct(product)} className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold" />
                 <input value={product.originalPrice || ""} type="number" placeholder="Precio original" onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, originalPrice: event.target.value ? Number(event.target.value) : null }))} onBlur={() => void props.onSaveProduct(product)} className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold" />
-                <SelectCategory value={product.category} onChange={(category) => props.updateProduct(product.id, (item) => ({ ...item, category, beerFormat: category === "cervezas" ? item.beerFormat || "latas" : null }))} onBlur={() => void props.onSaveProduct(product)} />
+                <SelectCategory categories={props.categories} value={product.category} onChange={(category) => props.updateProduct(product.id, (item) => ({ ...item, category, beerFormat: category === "cervezas" ? item.beerFormat || "latas" : null }))} onBlur={() => void props.onSaveProduct(product)} />
                 {product.category === "cervezas" ? <SelectBeerFormat value={product.beerFormat || "latas"} onChange={(beerFormat) => {
                   const nextProduct = { ...product, beerFormat };
                   props.updateProduct(product.id, () => nextProduct);
@@ -1526,6 +1639,26 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
                   <option value="sold_out">Agotado</option>
                   <option value="hidden">Oculto</option>
                 </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const featuredCount = props.products.filter((item) => item.featured && item.id !== product.id).length;
+                    if (!product.featured && featuredCount >= 2) {
+                      window.alert("Sólo puedes tener dos productos destacados. Quita uno antes de agregar otro.");
+                      return;
+                    }
+                    const nextProduct = { ...product, featured: !product.featured };
+                    props.updateProduct(product.id, () => nextProduct);
+                    void props.onSaveProduct(nextProduct);
+                  }}
+                  className={`action-button h-10 rounded-md border text-sm font-black ${
+                    product.featured
+                      ? "border-amber-400 bg-amber-100 text-amber-900"
+                      : "border-neutral-300 bg-white text-neutral-600"
+                  }`}
+                >
+                  {product.featured ? "Destacado activo" : "Marcar destacado"}
+                </button>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => {
                     const stock = product.stock === "hidden" ? "available" : "hidden";
@@ -1540,6 +1673,113 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CategoriesAdmin({
+  categories,
+  setCategories,
+}: {
+  categories: ProductCategory[];
+  setCategories: (categories: ProductCategory[]) => void;
+}) {
+  const [newLabel, setNewLabel] = useState("");
+  const [status, setStatus] = useState("");
+
+  function slugify(value: string) {
+    return normalizeText(value)
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+  }
+
+  async function saveCategories(nextCategories: ProductCategory[], successMessage: string) {
+    const ordered = nextCategories.map((category, index) => ({ ...category, sortOrder: index + 1 }));
+    const response = await fetch("/api/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ordered),
+    });
+    if (!response.ok) {
+      const data = (await response.json().catch(() => ({}))) as { error?: string };
+      setStatus(data.error || "No se pudieron guardar las categorías.");
+      return;
+    }
+    setCategories(ordered);
+    setStatus(successMessage);
+  }
+
+  async function addCategory(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const id = slugify(newLabel);
+    if (!id) return;
+    if (categories.some((category) => category.id === id)) {
+      setStatus("Ya existe una categoría con ese nombre.");
+      return;
+    }
+    await saveCategories(
+      [...categories, { id, label: newLabel.trim(), sortOrder: categories.length + 1 }],
+      "Categoría agregada.",
+    );
+    setNewLabel("");
+  }
+
+  async function deleteCategory(category: ProductCategory) {
+    if (!window.confirm(`¿Eliminar la categoría ${category.label}?`)) return;
+    const response = await fetch(`/api/categories/${category.id}`, { method: "DELETE" });
+    const data = (await response.json().catch(() => ({}))) as { error?: string };
+    if (!response.ok) {
+      setStatus(data.error || "No se pudo eliminar la categoría.");
+      return;
+    }
+    setCategories(categories.filter((item) => item.id !== category.id));
+    setStatus("Categoría eliminada.");
+  }
+
+  function moveCategory(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= categories.length) return;
+    const next = [...categories];
+    [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+    void saveCategories(next, "Orden actualizado.");
+  }
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+      <form onSubmit={addCategory} className="h-fit rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+        <h3 className="mb-4 text-lg font-black">Nueva categoría</h3>
+        <Input label="Nombre" value={newLabel} onChange={setNewLabel} required />
+        <button className="action-button mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
+          <Plus size={18} /> Agregar categoría
+        </button>
+        {status ? <p className="mt-3 text-sm font-bold text-neutral-600">{status}</p> : null}
+      </form>
+      <div className="grid gap-3">
+        {categories.map((category, index) => (
+          <div key={category.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-3 sm:grid-cols-[88px_minmax(0,1fr)_auto] sm:items-center">
+            <span className="text-sm font-black text-neutral-400">Orden {index + 1}</span>
+            <input
+              value={category.label}
+              onChange={(event) =>
+                setCategories(categories.map((item) => item.id === category.id ? { ...item, label: event.target.value } : item))
+              }
+              onBlur={() => void saveCategories(categories, "Categoría actualizada.")}
+              className="h-10 min-w-0 rounded-lg border border-neutral-300 px-3 font-bold"
+            />
+            <div className="flex gap-2">
+              <button type="button" disabled={index === 0} onClick={() => moveCategory(index, -1)} className="action-button grid size-10 place-items-center rounded-lg border border-neutral-300 disabled:opacity-30" title="Subir">
+                <ArrowUp size={17} />
+              </button>
+              <button type="button" disabled={index === categories.length - 1} onClick={() => moveCategory(index, 1)} className="action-button grid size-10 place-items-center rounded-lg border border-neutral-300 disabled:opacity-30" title="Bajar">
+                <ArrowDown size={17} />
+              </button>
+              <button type="button" onClick={() => void deleteCategory(category)} className="action-button grid size-10 place-items-center rounded-lg bg-red-50 text-red-700" title="Eliminar">
+                <Trash2 size={17} />
+              </button>
             </div>
           </div>
         ))}
@@ -1951,12 +2191,12 @@ function ImagePicker({ label, onImage }: { label: string; onImage: (imageUrl: st
   );
 }
 
-function SelectCategory(props: { value: CategoryId; onChange: (value: CategoryId) => void; onBlur?: () => void }) {
+function SelectCategory(props: { categories: ProductCategory[]; value: CategoryId; onChange: (value: CategoryId) => void; onBlur?: () => void }) {
   return (
     <label className="grid gap-1 text-sm font-bold">
-      Categoria
+      Categoría
       <select value={props.value} onChange={(event) => props.onChange(event.target.value as CategoryId)} onBlur={props.onBlur} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-bold">
-        {categories.map((category) => (
+        {props.categories.map((category) => (
           <option key={category.id} value={category.id}>
             {category.label}
           </option>

@@ -2,10 +2,11 @@ import type { OrderPayload } from "./types";
 import { formatCurrency } from "./format";
 
 export function normalizeChilePhone(value: string) {
+  const hadInternationalPrefix = value.trim().startsWith("+") || value.trim().startsWith("00");
   let digits = value.replace(/\D/g, "");
   if (digits.startsWith("00")) digits = digits.slice(2);
+  if (hadInternationalPrefix) return digits;
   if (digits.startsWith("9") && digits.length === 9) digits = `56${digits}`;
-  if (!digits.startsWith("56") && digits.length >= 8) digits = `56${digits}`;
   return digits;
 }
 
@@ -32,7 +33,6 @@ export function buildWhatsAppMessage(order: OrderPayload, purpose: "order" | "me
     `Teléfono: ${order.customer.phone}`,
     `Email: ${order.customer.email}`,
     `Dirección: ${order.customer.address}`,
-    order.customer.city ? `Ciudad: ${order.customer.city}` : "",
     order.customer.addressExtra ? `Complemento: ${order.customer.addressExtra}` : "",
     order.customer.notes ? `Notas: ${order.customer.notes}` : "",
     "",

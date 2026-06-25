@@ -1,12 +1,12 @@
-import type { CategoryId, DeliveryZone, Product } from "./types";
+import type { DeliveryZone, Product, ProductCategory } from "./types";
 
-export const categories: Array<{ id: CategoryId; label: string }> = [
-  { id: "promociones", label: "Promociones" },
-  { id: "cervezas", label: "Cervezas" },
-  { id: "piscos", label: "Piscos" },
-  { id: "vinos", label: "Vinos" },
-  { id: "destilados", label: "Destilados" },
-  { id: "extras", label: "Extras" },
+export const categories: ProductCategory[] = [
+  { id: "promociones", label: "Promociones", sortOrder: 1 },
+  { id: "cervezas", label: "Cervezas", sortOrder: 2 },
+  { id: "piscos", label: "Piscos", sortOrder: 3 },
+  { id: "vinos", label: "Vinos", sortOrder: 4 },
+  { id: "destilados", label: "Destilados", sortOrder: 5 },
+  { id: "extras", label: "Extras", sortOrder: 6 },
 ];
 
 export const initialProducts: Product[] = [

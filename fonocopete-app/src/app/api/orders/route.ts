@@ -162,7 +162,6 @@ export async function POST(request: Request) {
       <p><strong>Teléfono:</strong> ${order.customer.phone}</p>
       <p><strong>Email:</strong> ${order.customer.email}</p>
       <p><strong>Dirección:</strong> ${order.customer.address}</p>
-      <p><strong>Ciudad:</strong> ${order.customer.city}</p>
       <p><strong>Complemento:</strong> ${order.customer.addressExtra || "Sin complemento"}</p>
       <p><strong>Zona:</strong> ${order.zoneName}</p>
       <p>${itemRows}</p>

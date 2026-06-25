@@ -8,7 +8,7 @@ import { requireAdmin } from "@/lib/auth";
 const productSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  category: z.enum(["promociones", "cervezas", "piscos", "vinos", "destilados", "extras"]),
+  category: z.string().min(1),
   price: z.number().int().nonnegative(),
   originalPrice: z.number().int().nonnegative().nullable().optional(),
   beerFormat: z.enum(["latas", "botellas"]).nullable().optional(),

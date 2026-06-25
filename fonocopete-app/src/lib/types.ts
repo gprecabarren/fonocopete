@@ -1,4 +1,10 @@
-export type CategoryId = "promociones" | "cervezas" | "piscos" | "vinos" | "destilados" | "extras";
+export type CategoryId = string;
+
+export type ProductCategory = {
+  id: CategoryId;
+  label: string;
+  sortOrder: number;
+};
 
 export type Product = {
   id: string;
