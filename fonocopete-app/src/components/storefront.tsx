@@ -226,12 +226,15 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
     return products.filter((product) => {
-      const matchesCategory = product.category === resolvedActiveCategory;
+      const matchesCategory = cleanQuery ? true : product.category === resolvedActiveCategory;
       const matchesBeerFormat =
-        resolvedActiveCategory !== "cervezas" || activeBeerFormat === "all" || product.beerFormat === activeBeerFormat;
+        cleanQuery ||
+        resolvedActiveCategory !== "cervezas" ||
+        activeBeerFormat === "all" ||
+        product.beerFormat === activeBeerFormat;
       const matchesQuery =
         !cleanQuery ||
-        normalizeText(`${product.name} ${product.description} ${product.volume}`).includes(cleanQuery);
+        normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category} ${product.beerFormat ?? ""}`).includes(cleanQuery);
       return product.stock !== "hidden" && matchesCategory && matchesBeerFormat && matchesQuery;
     });
   }, [products, resolvedActiveCategory, activeBeerFormat, query]);
@@ -1526,6 +1529,31 @@ function AdminPanel(props: {
 }
 
 function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (orders: SavedOrder[]) => void }) {
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [dateMode, setDateMode] = useState<"day" | "month" | "year">("day");
+  const [dateFilter, setDateFilter] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState("all");
+  const [fulfillmentFilter, setFulfillmentFilter] = useState("all");
+  const [searchMode, setSearchMode] = useState<"email" | "phone">("email");
+  const [searchValue, setSearchValue] = useState("");
+  const filteredOrders = useMemo(
+    () =>
+      orders.filter((order) => {
+        const matchesDate = !dateFilter || orderMatchesDate(order.createdAt, dateMode, dateFilter);
+        const matchesPayment = paymentFilter === "all" || order.paymentStatus === paymentFilter;
+        const matchesFulfillment = fulfillmentFilter === "all" || order.fulfillmentStatus === fulfillmentFilter;
+        const cleanSearch = normalizeText(searchValue);
+        const searchTarget =
+          searchMode === "email"
+            ? normalizeText(order.customerEmail)
+            : order.customerPhone.replace(/\D/g, "");
+        const normalizedSearch = searchMode === "email" ? cleanSearch : searchValue.replace(/\D/g, "");
+        const matchesSearch = !normalizedSearch || searchTarget.includes(normalizedSearch);
+        return matchesDate && matchesPayment && matchesFulfillment && matchesSearch;
+      }),
+    [orders, dateMode, dateFilter, paymentFilter, fulfillmentFilter, searchMode, searchValue],
+  );
+
   async function updateOrder(order: SavedOrder, field: "paymentStatus" | "fulfillmentStatus", value: string) {
     const response = await fetch(`/api/orders/${order.id}`, {
       method: "PATCH",
@@ -1549,7 +1577,113 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
 
   return (
     <div className="grid gap-4">
-      {orders.map((order) => (
+      <div className="rounded-lg border border-neutral-200 bg-[#f7f4ef] p-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-black">Pedidos</h3>
+            <p className="text-sm font-semibold text-neutral-600">
+              Mostrando {filteredOrders.length} de {orders.length}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setFiltersOpen((current) => !current)}
+            className={`action-button h-11 rounded-lg px-4 text-sm font-black ${filtersOpen ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"}`}
+          >
+            {filtersOpen ? "Ocultar filtros" : "Mostrar filtros"}
+          </button>
+        </div>
+        {filtersOpen ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-[130px_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_150px_minmax(0,1.2fr)]">
+            <label className="grid gap-1 text-sm font-bold">
+              Fecha
+              <select
+                value={dateMode}
+                onChange={(event) => {
+                  setDateMode(event.target.value as "day" | "month" | "year");
+                  setDateFilter("");
+                }}
+                className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium"
+              >
+                <option value="day">Día</option>
+                <option value="month">Mes</option>
+                <option value="year">Año</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-bold">
+              Valor fecha
+              <input
+                type={dateMode === "year" ? "number" : dateMode === "month" ? "month" : "date"}
+                min={dateMode === "year" ? "2024" : undefined}
+                max={dateMode === "year" ? "2100" : undefined}
+                value={dateFilter}
+                onChange={(event) => setDateFilter(event.target.value)}
+                className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium"
+              />
+            </label>
+            <label className="grid gap-1 text-sm font-bold">
+              Estado pago
+              <select value={paymentFilter} onChange={(event) => setPaymentFilter(event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
+                <option value="all">Todos</option>
+                <option value="pending">Pendiente</option>
+                <option value="paid">Pagado</option>
+                <option value="refunded">Reembolsado</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-bold">
+              Estado pedido
+              <select value={fulfillmentFilter} onChange={(event) => setFulfillmentFilter(event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
+                <option value="all">Todos</option>
+                <option value="new">Nuevo</option>
+                <option value="confirmed">Confirmado</option>
+                <option value="preparing">Preparando</option>
+                <option value="delivering">En reparto</option>
+                <option value="completed">Completado</option>
+                <option value="cancelled">Cancelado</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-bold">
+              Buscar por
+              <select value={searchMode} onChange={(event) => setSearchMode(event.target.value as "email" | "phone")} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
+                <option value="email">Correo</option>
+                <option value="phone">Teléfono</option>
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-bold">
+              Búsqueda
+              <input
+                type={searchMode === "phone" ? "tel" : "email"}
+                inputMode={searchMode === "phone" ? "numeric" : "email"}
+                value={searchValue}
+                onChange={(event) => setSearchValue(event.target.value)}
+                placeholder={searchMode === "phone" ? "Ej: 987213634" : "correo@ejemplo.cl"}
+                className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => {
+                setDateFilter("");
+                setPaymentFilter("all");
+                setFulfillmentFilter("all");
+                setSearchValue("");
+              }}
+              className="action-button h-11 rounded-lg border border-neutral-300 bg-white text-sm font-black md:col-span-2 xl:col-span-6"
+            >
+              Limpiar filtros
+            </button>
+          </div>
+        ) : null}
+      </div>
+      {!filteredOrders.length ? (
+        <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center font-bold text-neutral-500">
+          No hay pedidos con esos filtros.
+        </div>
+      ) : null}
+      {filteredOrders.map((order) => {
+        const cleanZoneName = cleanOrderZoneName(order.zoneName);
+        const mapQuery = [order.address, cleanZoneName].filter(Boolean).join(", ");
+        return (
         <article key={order.id} className="rounded-lg border border-neutral-200 bg-white p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
@@ -1577,11 +1711,19 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="min-w-0">
-              <p className="break-words text-sm font-semibold">{order.address}{order.city ? `, ${order.city}` : ""}</p>
-              {order.addressExtra ? <p className="text-sm text-neutral-600">{order.addressExtra}</p> : null}
+              <div className="grid gap-2 rounded-lg bg-neutral-50 p-3 text-sm">
+                <p className="break-words font-black">Dirección: {order.address}</p>
+                <p className="font-bold text-red-700">Zona: {cleanZoneName || order.zoneName}</p>
+                {order.city ? <p className="text-neutral-700">Ciudad guardada: {order.city}</p> : null}
+                {order.addressExtra ? <p className="text-neutral-700">Referencia: {order.addressExtra}</p> : null}
+                {order.notes ? <p className="text-neutral-700">Notas: {order.notes}</p> : null}
+                <p className="text-neutral-700">Teléfono: {order.customerPhone}</p>
+                <p className="break-words text-neutral-700">Email: {order.customerEmail}</p>
+                <p className="text-neutral-700">Método de pago: {paymentMethodLabel(order.paymentMethod)}</p>
+              </div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <a
-                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([order.address, order.city, order.addressExtra].filter(Boolean).join(", "))}`}
+                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`}
                   target="_blank"
                   rel="noreferrer"
                   className="action-button flex h-10 items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 text-sm font-black text-blue-800"
@@ -1589,7 +1731,7 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
                   <SiGooglemaps className="text-[#4285F4]" size={18} /> Google Maps
                 </a>
                 <a
-                  href={`https://www.waze.com/ul?q=${encodeURIComponent([order.address, order.city, order.addressExtra].filter(Boolean).join(", "))}&navigate=yes`}
+                  href={`https://www.waze.com/ul?q=${encodeURIComponent(mapQuery)}&navigate=yes`}
                   target="_blank"
                   rel="noreferrer"
                   className="action-button flex h-10 items-center gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 text-sm font-black text-cyan-900"
@@ -1597,11 +1739,14 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
                   <SiWaze className="text-[#33CCFF]" size={19} /> Waze
                 </a>
               </div>
-              <p className="mt-2 text-sm">{order.customerPhone} · {order.customerEmail}</p>
               <div className="mt-3 grid gap-1 rounded-lg bg-neutral-50 p-3 text-sm">
                 {order.items.map((item) => <p key={`${order.id}-${item.name}`}>{item.quantity}x {item.name} · {formatCurrency(item.lineTotal)}</p>)}
               </div>
-              <p className="mt-3 text-lg font-black">Total: {formatCurrency(order.total)}</p>
+              <div className="mt-3 grid gap-2 rounded-lg border border-neutral-200 p-3 text-sm">
+                <p className="flex justify-between gap-3"><span>Subtotal</span><strong>{formatCurrency(order.subtotal)}</strong></p>
+                <p className="flex justify-between gap-3"><span>Despacho</span><strong>{formatCurrency(order.delivery)}</strong></p>
+                <p className="flex justify-between gap-3 border-t border-neutral-200 pt-2 text-lg font-black"><span>Total</span><span>{formatCurrency(order.total)}</span></p>
+              </div>
             </div>
             <div className="grid content-start gap-3">
               <label className="grid gap-1 text-sm font-bold">
@@ -1632,7 +1777,8 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
             </div>
           </div>
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -1678,6 +1824,27 @@ function fulfillmentStatusMeta(status: string) {
 
 function StatusPill({ label, className }: { label: string; className: string }) {
   return <span className={`rounded-md px-2 py-1 text-xs font-black ${className}`}>{label}</span>;
+}
+
+function paymentMethodLabel(method: OrderPayload["paymentMethod"]) {
+  if (method === "cash_on_delivery") return "Pago contra entrega";
+  if (method === "mercadopago") return "Mercado Pago";
+  return "Transferencia bancaria";
+}
+
+function cleanOrderZoneName(zoneName: string) {
+  return zoneName.replace(/\s+-\s+sin cobro$/i, "").replace(/\s+\(manual\)$/i, "").trim();
+}
+
+function orderMatchesDate(createdAt: string, mode: "day" | "month" | "year", value: string) {
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return false;
+  const year = String(date.getFullYear());
+  const month = `${year}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  const day = `${month}-${String(date.getDate()).padStart(2, "0")}`;
+  if (mode === "year") return year === value;
+  if (mode === "month") return month === value;
+  return day === value;
 }
 
 function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct: (productId: string, updater: (product: Product) => Product) => void }) {
