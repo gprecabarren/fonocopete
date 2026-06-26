@@ -624,8 +624,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
               <span className="inline-flex h-8 items-center gap-2 rounded-md bg-white px-3 text-neutral-950">
                 <SiUbereats size={18} className="text-[#06C167]" /> Uber Eats
               </span>
-              <span className="inline-flex h-8 items-center rounded-md bg-[#ea044e] px-3 text-white">
-                PedidosYa
+              <span className="inline-flex h-8 items-center rounded-md bg-[#ef3e46] px-2">
+                <img src="/pedidosya-logo.png" alt="PedidosYa" className="h-6 w-[104px] object-contain" />
               </span>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black">
