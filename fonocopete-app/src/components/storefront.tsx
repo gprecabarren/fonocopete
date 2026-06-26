@@ -219,6 +219,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   const activeZones = deliveryZones.filter((zone) => zone.active);
+  const knownCategoryIds = useMemo(() => new Set(productCategories.map((category) => category.id)), [productCategories]);
   const resolvedActiveCategory = productCategories.some((category) => category.id === activeCategory)
     ? activeCategory
     : productCategories[0]?.id || "promociones";
@@ -227,6 +228,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
     return products.filter((product) => {
+      const hasKnownCategory = knownCategoryIds.has(product.category);
       const matchesCategory = cleanQuery ? true : product.category === resolvedActiveCategory;
       const matchesBeerFormat =
         cleanQuery ||
@@ -236,12 +238,12 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       const matchesQuery =
         !cleanQuery ||
         normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category} ${product.beerFormat ?? ""}`).includes(cleanQuery);
-      return product.stock !== "hidden" && matchesCategory && matchesBeerFormat && matchesQuery;
+      return product.stock !== "hidden" && hasKnownCategory && matchesCategory && matchesBeerFormat && matchesQuery;
     });
-  }, [products, resolvedActiveCategory, activeBeerFormat, query]);
-  const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden").slice(0, 2);
-  const visibleProductCount = products.filter((product) => product.stock !== "hidden").length;
-  const promoProductCount = products.filter((product) => product.stock !== "hidden" && product.category === "promociones").length;
+  }, [products, knownCategoryIds, resolvedActiveCategory, activeBeerFormat, query]);
+  const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden" && knownCategoryIds.has(product.category)).slice(0, 2);
+  const visibleProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category)).length;
+  const promoProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category) && product.category === "promociones").length;
   const cartLines = cart
     .map((item) => {
       const product = products.find((entry) => entry.id === item.productId && entry.stock !== "sold_out");
@@ -470,6 +472,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   async function addDraftProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft.name || draft.price <= 0) return;
+    if (draft.originalPrice && draft.price <= 0) return;
+    if (draft.category === "cervezas" && !draft.beerFormat) return;
 
     const nextProduct: Product = {
       ...draft,
@@ -482,6 +486,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         "https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=900&q=80",
       description: draft.description || "Producto cargado desde administración.",
       volume: draft.volume || "Formato por definir",
+      originalPrice: draft.originalPrice && draft.price > 0 ? draft.originalPrice : null,
     };
 
     const savedProducts = await persistProducts([nextProduct]);
@@ -844,15 +849,15 @@ function SocialLinks({ settings, className = "" }: { settings: SiteSettings; cla
   const whatsappUrl = `https://wa.me/${settings.whatsappNumber.replace(/\D/g, "")}`;
   return (
     <div className={`items-center gap-1 ${className}`}>
-      <SocialIcon href={settings.instagramUrl} label="Instagram"><FaInstagram size={18} /></SocialIcon>
-      <SocialIcon href={settings.facebookUrl} label="Facebook"><FaFacebookF size={17} /></SocialIcon>
-      <SocialIcon href={`mailto:${settings.contactEmail}`} label="Correo"><Mail size={18} /></SocialIcon>
-      <SocialIcon href={whatsappUrl} label="WhatsApp"><FaWhatsapp size={19} /></SocialIcon>
+      <SocialIcon href={settings.instagramUrl} label="Instagram" hoverClass="hover:border-pink-500 hover:text-pink-600"><FaInstagram size={18} /></SocialIcon>
+      <SocialIcon href={settings.facebookUrl} label="Facebook" hoverClass="hover:border-blue-600 hover:text-blue-600"><FaFacebookF size={17} /></SocialIcon>
+      <SocialIcon href={`mailto:${settings.contactEmail}`} label="Correo" hoverClass="hover:border-red-500 hover:text-red-600"><Mail size={18} /></SocialIcon>
+      <SocialIcon href={whatsappUrl} label="WhatsApp" hoverClass="hover:border-green-500 hover:text-green-600"><FaWhatsapp size={19} /></SocialIcon>
     </div>
   );
 }
 
-function SocialIcon({ href, label, children }: { href: string; label: string; children: React.ReactNode }) {
+function SocialIcon({ href, label, hoverClass, children }: { href: string; label: string; hoverClass: string; children: React.ReactNode }) {
   return (
     <a
       href={href}
@@ -860,7 +865,7 @@ function SocialIcon({ href, label, children }: { href: string; label: string; ch
       rel={href.startsWith("http") ? "noreferrer" : undefined}
       aria-label={label}
       title={label}
-      className="action-button grid size-10 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-700 hover:border-red-500 hover:text-red-600"
+      className={`action-button grid size-10 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-700 ${hoverClass}`}
     >
       {children}
     </a>
@@ -1591,6 +1596,7 @@ function AdminPanel(props: {
           <CategoriesAdmin
             categories={props.categories}
             setCategories={props.setCategories}
+            products={props.products}
           />
         ) : props.adminView === "zones" ? (
           <ZonesAdmin zones={props.deliveryZones} setZones={props.setDeliveryZones} />
@@ -2005,6 +2011,17 @@ function orderMatchesDate(createdAt: string, mode: "day" | "month" | "year", val
 }
 
 function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct: (productId: string, updater: (product: Product) => Product) => void }) {
+  const [productView, setProductView] = useState("__latest");
+  const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
+  const categoryIds = useMemo(() => new Set(props.categories.map((category) => category.id)), [props.categories]);
+  const uncategorizedProducts = props.products.filter((product) => !categoryIds.has(product.category));
+  const visibleAdminProducts =
+    productView === "__latest"
+      ? props.products.slice(0, 5)
+      : productView === "__uncategorized"
+        ? uncategorizedProducts
+        : props.products.filter((product) => product.category === productView);
+
   return (
     <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
       <div className="grid gap-4">
@@ -2015,13 +2032,29 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
           </h3>
           <div className="grid gap-3">
             <Input label="Nombre" value={props.draft.name} onChange={(value) => props.setDraft({ ...props.draft, name: value })} />
-            <Input label="Precio" type="number" value={String(props.draft.price || "")} onChange={(value) => props.setDraft({ ...props.draft, price: Number(value) })} />
-            <Input label="Precio original (opcional)" type="number" value={props.draft.originalPrice ? String(props.draft.originalPrice) : ""} onChange={(value) => props.setDraft({ ...props.draft, originalPrice: value ? Number(value) : null })} />
-            <SelectCategory categories={props.categories} value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category, beerFormat: category === "cervezas" ? props.draft.beerFormat || "latas" : null })} />
-            {props.draft.category === "cervezas" ? <SelectBeerFormat value={props.draft.beerFormat || "latas"} onChange={(beerFormat) => props.setDraft({ ...props.draft, beerFormat })} /> : null}
-            <Input label="Formato" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
-            <ImagePicker label="Cargar imagen desde PC" onImage={(imageUrl) => props.setDraft({ ...props.draft, imageUrl })} />
-            <Input label="Foto URL" value={props.draft.imageUrl} onChange={(value) => props.setDraft({ ...props.draft, imageUrl: value })} />
+            <Input label="Precio normal" type="number" value={String(props.draft.price || "")} onChange={(value) => props.setDraft({ ...props.draft, price: Number(value), originalPrice: Number(value) > 0 ? props.draft.originalPrice : null })} />
+            <Input
+              label="Precio original (opcional)"
+              type="number"
+              value={props.draft.originalPrice ? String(props.draft.originalPrice) : ""}
+              disabled={!props.draft.price}
+              onChange={(value) => props.setDraft({ ...props.draft, originalPrice: props.draft.price && value ? Number(value) : null })}
+            />
+            <SelectCategory categories={props.categories} value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category, beerFormat: category === "cervezas" ? props.draft.beerFormat : null })} />
+            {props.draft.category === "cervezas" ? <SelectBeerFormat value={props.draft.beerFormat || ""} onChange={(beerFormat) => props.setDraft({ ...props.draft, beerFormat: beerFormat || null })} required /> : null}
+            <Input label="Formato / volumen" placeholder="Ej: 750 ml, 1 L, six pack, 40°" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
+            <div className="grid gap-2">
+              <span className="text-sm font-bold">Imagen del producto</span>
+              <div className="grid grid-cols-2 gap-2">
+                <SegmentButton active={imageMode === "upload"} onClick={() => setImageMode("upload")}>Subir imagen</SegmentButton>
+                <SegmentButton active={imageMode === "url"} onClick={() => setImageMode("url")}>Foto URL</SegmentButton>
+              </div>
+              {imageMode === "upload" ? (
+                <ImagePicker label="Subir imagen" onImage={(imageUrl) => props.setDraft({ ...props.draft, imageUrl })} />
+              ) : (
+                <Input label="Foto URL" value={props.draft.imageUrl} onChange={(value) => props.setDraft({ ...props.draft, imageUrl: value })} />
+              )}
+            </div>
             <Textarea label="Descripción" value={props.draft.description} onChange={(value) => props.setDraft({ ...props.draft, description: value })} />
             <button className="flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
               <Check size={18} />
@@ -2041,103 +2074,259 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
           </button>
         </div>
       </div>
-      <div className="grid gap-3">
-        {props.products.map((product) => (
-          <div key={product.id} className="rounded-lg border border-neutral-200 bg-white p-3">
-            <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_150px]">
-              <img src={product.imageUrl} alt="" className="h-24 w-full rounded-lg object-cover md:h-full" />
-              <div className="grid min-w-0 gap-2">
-                <input value={product.name} onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, name: event.target.value }))} onBlur={() => void props.onSaveProduct(product)} className="rounded-md border border-neutral-300 px-3 py-2 font-black" />
-                <textarea value={product.description} onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, description: event.target.value }))} onBlur={() => void props.onSaveProduct(product)} className="min-h-16 rounded-md border border-neutral-300 px-3 py-2 text-sm" />
-                <ImagePicker
-                  label="Cambiar imagen desde PC"
-                  onImage={(imageUrl) => {
-                    const nextProduct = { ...product, imageUrl };
-                    props.updateProduct(product.id, () => nextProduct);
-                    void props.onSaveProduct(nextProduct);
-                  }}
-                />
-                <input value={product.imageUrl} onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, imageUrl: event.target.value }))} onBlur={() => void props.onSaveProduct(product)} className="rounded-md border border-neutral-300 px-3 py-2 text-xs" />
-              </div>
-              <div className="grid gap-2">
-                <input value={product.price} type="number" onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, price: Number(event.target.value) }))} onBlur={() => void props.onSaveProduct(product)} className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold" />
-                <input value={product.originalPrice || ""} type="number" placeholder="Precio original" onChange={(event) => props.updateProduct(product.id, (item) => ({ ...item, originalPrice: event.target.value ? Number(event.target.value) : null }))} onBlur={() => void props.onSaveProduct(product)} className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold" />
-                <SelectCategory categories={props.categories} value={product.category} onChange={(category) => props.updateProduct(product.id, (item) => ({ ...item, category, beerFormat: category === "cervezas" ? item.beerFormat || "latas" : null }))} onBlur={() => void props.onSaveProduct(product)} />
-                {product.category === "cervezas" ? <SelectBeerFormat value={product.beerFormat || "latas"} onChange={(beerFormat) => {
-                  const nextProduct = { ...product, beerFormat };
-                  props.updateProduct(product.id, () => nextProduct);
-                  void props.onSaveProduct(nextProduct);
-                }} /> : null}
-                <select value={product.stock} onChange={(event) => {
-                  const stock = event.target.value as Product["stock"];
-                  const nextProduct = { ...product, stock };
-                  props.updateProduct(product.id, () => nextProduct);
-                  void props.onSaveProduct(nextProduct);
-                }} className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold">
-                  <option value="available">Activo</option>
-                  <option value="low">Bajo stock</option>
-                  <option value="sold_out">Agotado</option>
-                  <option value="hidden">Oculto</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const featuredCount = props.products.filter((item) => item.featured && item.id !== product.id).length;
-                    if (!product.featured && featuredCount >= 2) {
-                      window.alert("Sólo puedes tener dos productos destacados. Quita uno antes de agregar otro.");
-                      return;
-                    }
-                    const nextProduct = { ...product, featured: !product.featured };
-                    props.updateProduct(product.id, () => nextProduct);
-                    void props.onSaveProduct(nextProduct);
-                  }}
-                  className={`action-button h-10 rounded-md border text-sm font-black ${
-                    product.featured
-                      ? "border-amber-400 bg-amber-100 text-amber-900"
-                      : "border-neutral-300 bg-white text-neutral-600"
-                  }`}
-                >
-                  {product.featured ? "Destacado activo" : "Marcar destacado"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void props.onSaveProduct(product)}
-                  className="action-button flex h-10 items-center justify-center gap-2 rounded-md bg-neutral-950 text-sm font-black text-white"
-                >
-                  <Save size={17} />
-                  Guardar cambios
-                </button>
-                <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => {
-                    const stock = product.stock === "hidden" ? "available" : "hidden";
-                    const nextProduct = { ...product, stock: stock as Product["stock"] };
-                    props.updateProduct(product.id, () => nextProduct);
-                    void props.onSaveProduct(nextProduct);
-                  }} className="grid h-10 place-items-center rounded-md border border-neutral-300" title={product.stock === "hidden" ? "Mostrar" : "Ocultar"}>
-                    {product.stock === "hidden" ? <Eye size={17} /> : <EyeOff size={17} />}
-                  </button>
-                  <button type="button" onClick={() => void props.onDeleteProduct(product.id)} className="grid h-10 place-items-center rounded-md bg-red-50 text-red-700" title="Eliminar">
-                    <Trash2 size={17} />
-                  </button>
-                </div>
-              </div>
-            </div>
+      <div className="grid content-start gap-4">
+        <div className="rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+          <div className="mb-3">
+            <h3 className="text-lg font-black">Productos subidos</h3>
+            <p className="text-sm font-semibold text-neutral-600">Edita por categoría o revisa los últimos productos agregados.</p>
           </div>
-        ))}
+          <div className="flex max-w-full gap-2 overflow-x-auto pb-2">
+            <CatalogFilterButton active={productView === "__latest"} onClick={() => setProductView("__latest")}>
+              Últimos 5
+            </CatalogFilterButton>
+            {props.categories.map((category) => (
+              <CatalogFilterButton key={category.id} active={productView === category.id} onClick={() => setProductView(category.id)}>
+                {category.label} ({props.products.filter((product) => product.category === category.id).length})
+              </CatalogFilterButton>
+            ))}
+            <CatalogFilterButton active={productView === "__uncategorized"} onClick={() => setProductView("__uncategorized")}>
+              Sin categoría ({uncategorizedProducts.length})
+            </CatalogFilterButton>
+          </div>
+        </div>
+        {visibleAdminProducts.length ? (
+          visibleAdminProducts.map((product) => (
+            <ProductAdminCard
+              key={product.id}
+              product={product}
+              products={props.products}
+              categories={props.categories}
+              categoryIds={categoryIds}
+              updateProduct={props.updateProduct}
+              onSaveProduct={props.onSaveProduct}
+              onDeleteProduct={props.onDeleteProduct}
+            />
+          ))
+        ) : (
+          <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center text-sm font-bold text-neutral-500">
+            No hay productos en esta vista.
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function ProductAdminCard({
+  product,
+  products,
+  categories,
+  categoryIds,
+  updateProduct,
+  onSaveProduct,
+  onDeleteProduct,
+}: {
+  product: Product;
+  products: Product[];
+  categories: ProductCategory[];
+  categoryIds: Set<string>;
+  updateProduct: (productId: string, updater: (product: Product) => Product) => void;
+  onSaveProduct: (product: Product) => Promise<void>;
+  onDeleteProduct: (productId: string) => Promise<void>;
+}) {
+  const hasCategory = categoryIds.has(product.category);
+  const selectedCategory = hasCategory ? product.category : "";
+
+  function update(nextProduct: Product) {
+    updateProduct(product.id, () => nextProduct);
+  }
+
+  function save(nextProduct = product) {
+    if (!nextProduct.name.trim()) {
+      window.alert("El producto necesita nombre.");
+      return;
+    }
+    if (nextProduct.price <= 0) {
+      window.alert("Ingresa un precio normal antes de guardar.");
+      return;
+    }
+    if (!categoryIds.has(nextProduct.category)) {
+      window.alert("Asigna una categoría válida antes de guardar.");
+      return;
+    }
+    if (nextProduct.category === "cervezas" && !nextProduct.beerFormat) {
+      window.alert("Selecciona si la cerveza es lata o botella.");
+      return;
+    }
+    const cleanProduct = {
+      ...nextProduct,
+      originalPrice: nextProduct.price > 0 ? nextProduct.originalPrice || null : null,
+      beerFormat: nextProduct.category === "cervezas" ? nextProduct.beerFormat : null,
+    };
+    update(cleanProduct);
+    void onSaveProduct(cleanProduct);
+  }
+
+  return (
+    <div className={`rounded-lg border bg-white p-3 shadow-sm ${hasCategory ? "border-neutral-200" : "border-red-200 ring-2 ring-red-100"}`}>
+      {!hasCategory ? (
+        <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-black text-red-800">
+          Producto sin categoría: no se muestra al cliente hasta asignarle una categoría.
+        </p>
+      ) : null}
+      <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_170px]">
+        <img src={product.imageUrl} alt="" className="h-24 w-full rounded-lg object-cover md:h-full" />
+        <div className="grid min-w-0 gap-2">
+          <input value={product.name} onChange={(event) => update({ ...product, name: event.target.value })} className="rounded-md border border-neutral-300 px-3 py-2 font-black" />
+          <textarea value={product.description} onChange={(event) => update({ ...product, description: event.target.value })} className="min-h-16 rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+          <ImagePicker
+            label="Subir imagen"
+            onImage={(imageUrl) => {
+              const nextProduct = { ...product, imageUrl };
+              update(nextProduct);
+              void onSaveProduct(nextProduct);
+            }}
+          />
+          <input
+            value={product.imageUrl}
+            onChange={(event) => update({ ...product, imageUrl: event.target.value })}
+            placeholder="Foto URL"
+            className="rounded-md border border-neutral-300 px-3 py-2 text-xs"
+          />
+        </div>
+        <div className="grid gap-2">
+          <input
+            value={product.price || ""}
+            type="number"
+            placeholder="Precio normal"
+            onChange={(event) => {
+              const price = Number(event.target.value);
+              update({ ...product, price, originalPrice: price > 0 ? product.originalPrice : null });
+            }}
+            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold"
+          />
+          <input
+            value={product.originalPrice || ""}
+            type="number"
+            placeholder="Precio original opcional"
+            disabled={!product.price}
+            onChange={(event) => update({ ...product, originalPrice: product.price && event.target.value ? Number(event.target.value) : null })}
+            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
+          />
+          <SelectCategory
+            categories={categories}
+            value={selectedCategory}
+            allowEmpty
+            onChange={(category) => update({ ...product, category, beerFormat: category === "cervezas" ? product.beerFormat || null : null })}
+          />
+          {product.category === "cervezas" ? (
+            <SelectBeerFormat value={product.beerFormat || ""} onChange={(beerFormat) => update({ ...product, beerFormat: beerFormat || null })} required />
+          ) : null}
+          <input
+            value={product.volume}
+            placeholder="Formato / volumen: 750 ml, 1 L, 40°"
+            onChange={(event) => update({ ...product, volume: event.target.value })}
+            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold"
+          />
+          <StockSelect
+            value={product.stock}
+            onChange={(stock) => {
+              const nextProduct = { ...product, stock };
+              update(nextProduct);
+              void onSaveProduct(nextProduct);
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const featuredCount = products.filter((item) => item.featured && item.id !== product.id).length;
+              if (!product.featured && featuredCount >= 2) {
+                window.alert("Sólo puedes tener dos productos destacados. Quita uno antes de agregar otro.");
+                return;
+              }
+              const nextProduct = { ...product, featured: !product.featured };
+              update(nextProduct);
+              void onSaveProduct(nextProduct);
+            }}
+            className={`action-button h-10 rounded-md border text-sm font-black ${
+              product.featured
+                ? "border-amber-400 bg-amber-100 text-amber-900"
+                : "border-neutral-300 bg-white text-neutral-600"
+            }`}
+          >
+            {product.featured ? "Destacado activo" : "Marcar destacado"}
+          </button>
+          <button
+            type="button"
+            onClick={() => save()}
+            className="action-button flex h-10 items-center justify-center gap-2 rounded-md bg-neutral-950 text-sm font-black text-white"
+          >
+            <Save size={17} />
+            Guardar cambios
+          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => {
+              const stock = product.stock === "hidden" ? "available" : "hidden";
+              const nextProduct = { ...product, stock: stock as Product["stock"] };
+              update(nextProduct);
+              void onSaveProduct(nextProduct);
+            }} className="grid h-10 place-items-center rounded-md border border-neutral-300" title={product.stock === "hidden" ? "Mostrar" : "Ocultar"}>
+              {product.stock === "hidden" ? <Eye size={17} /> : <EyeOff size={17} />}
+            </button>
+            <button type="button" onClick={() => void onDeleteProduct(product.id)} className="grid h-10 place-items-center rounded-md bg-red-50 text-red-700" title="Eliminar">
+              <Trash2 size={17} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CatalogFilterButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`action-button h-10 shrink-0 rounded-lg px-3 text-sm font-black ${active ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function StockSelect({ value, onChange }: { value: Product["stock"]; onChange: (value: Product["stock"]) => void }) {
+  const styles: Record<Product["stock"], string> = {
+    available: "border-green-200 bg-green-50 text-green-800",
+    low: "border-amber-200 bg-amber-50 text-amber-900",
+    sold_out: "border-red-200 bg-red-50 text-red-800",
+    hidden: "border-neutral-300 bg-neutral-100 text-neutral-700",
+  };
+  return (
+    <select value={value} onChange={(event) => onChange(event.target.value as Product["stock"])} className={`h-10 rounded-md border px-2 text-sm font-black ${styles[value]}`}>
+      <option value="available">Activo</option>
+      <option value="low">Bajo stock</option>
+      <option value="sold_out">Agotado</option>
+      <option value="hidden">Oculto</option>
+    </select>
   );
 }
 
 function CategoriesAdmin({
   categories,
   setCategories,
+  products,
 }: {
   categories: ProductCategory[];
   setCategories: (categories: ProductCategory[]) => void;
+  products: Product[];
 }) {
   const [newLabel, setNewLabel] = useState("");
   const [status, setStatus] = useState("");
+  const productCounts = useMemo(
+    () => new Map(categories.map((category) => [category.id, products.filter((product) => product.category === category.id).length])),
+    [categories, products],
+  );
 
   function slugify(value: string) {
     return normalizeText(value)
@@ -2177,6 +2366,15 @@ function CategoriesAdmin({
   }
 
   async function deleteCategory(category: ProductCategory) {
+    if (category.id === "cervezas") {
+      setStatus("La categoría Cervezas no se puede eliminar.");
+      return;
+    }
+    const associatedProducts = productCounts.get(category.id) ?? 0;
+    if (associatedProducts > 0) {
+      setStatus(`La categoría tiene ${associatedProducts} producto${associatedProducts === 1 ? "" : "s"}. Muévelos antes de eliminarla.`);
+      return;
+    }
     if (!window.confirm(`¿Eliminar la categoría ${category.label}?`)) return;
     const response = await fetch(`/api/categories/${category.id}`, { method: "DELETE" });
     const data = (await response.json().catch(() => ({}))) as { error?: string };
@@ -2228,13 +2426,16 @@ function CategoriesAdmin({
               className="h-10 min-w-0 rounded-lg border border-neutral-300 px-3 font-bold"
             />
             <div className="flex gap-2">
+              <span className="grid h-10 min-w-20 place-items-center rounded-lg bg-neutral-100 px-3 text-xs font-black text-neutral-600">
+                {productCounts.get(category.id) ?? 0} prod.
+              </span>
               <button type="button" disabled={index === 0} onClick={() => moveCategory(index, -1)} className="action-button grid size-10 place-items-center rounded-lg border border-neutral-300 disabled:opacity-30" title="Subir">
                 <ArrowUp size={17} />
               </button>
               <button type="button" disabled={index === categories.length - 1} onClick={() => moveCategory(index, 1)} className="action-button grid size-10 place-items-center rounded-lg border border-neutral-300 disabled:opacity-30" title="Bajar">
                 <ArrowDown size={17} />
               </button>
-              <button type="button" onClick={() => void deleteCategory(category)} className="action-button grid size-10 place-items-center rounded-lg bg-red-50 text-red-700" title="Eliminar">
+              <button type="button" disabled={category.id === "cervezas"} onClick={() => void deleteCategory(category)} className="action-button grid size-10 place-items-center rounded-lg bg-red-50 text-red-700 disabled:cursor-not-allowed disabled:opacity-35" title={category.id === "cervezas" ? "Cervezas no se puede eliminar" : "Eliminar"}>
                 <Trash2 size={17} />
               </button>
             </div>
@@ -2735,11 +2936,29 @@ function IconButton({ label, onClick, children }: { label: string; onClick: () =
   );
 }
 
-function Input(props: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean; inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"] }) {
+function Input(props: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  type?: string;
+  required?: boolean;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  placeholder?: string;
+  disabled?: boolean;
+}) {
   return (
     <label className="grid gap-1 text-sm font-bold">
       {props.label}
-      <input type={props.type || "text"} inputMode={props.inputMode} value={props.value} onChange={(event) => props.onChange(event.target.value)} className="h-11 min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-medium" required={props.required} />
+      <input
+        type={props.type || "text"}
+        inputMode={props.inputMode}
+        value={props.value}
+        disabled={props.disabled}
+        placeholder={props.placeholder}
+        onChange={(event) => props.onChange(event.target.value)}
+        className="h-11 min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-medium disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
+        required={props.required}
+      />
     </label>
   );
 }
@@ -2879,11 +3098,12 @@ function ImagePicker({ label, onImage }: { label: string; onImage: (imageUrl: st
   );
 }
 
-function SelectCategory(props: { categories: ProductCategory[]; value: CategoryId; onChange: (value: CategoryId) => void; onBlur?: () => void }) {
+function SelectCategory(props: { categories: ProductCategory[]; value: CategoryId; onChange: (value: CategoryId) => void; onBlur?: () => void; allowEmpty?: boolean }) {
   return (
     <label className="grid gap-1 text-sm font-bold">
       Categoría
       <select value={props.value} onChange={(event) => props.onChange(event.target.value as CategoryId)} onBlur={props.onBlur} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-bold">
+        {props.allowEmpty ? <option value="">Sin categoría</option> : null}
         {props.categories.map((category) => (
           <option key={category.id} value={category.id}>
             {category.label}
@@ -2894,11 +3114,12 @@ function SelectCategory(props: { categories: ProductCategory[]; value: CategoryI
   );
 }
 
-function SelectBeerFormat(props: { value: "latas" | "botellas"; onChange: (value: "latas" | "botellas") => void }) {
+function SelectBeerFormat(props: { value: "" | "latas" | "botellas"; onChange: (value: "" | "latas" | "botellas") => void; required?: boolean }) {
   return (
     <label className="grid gap-1 text-sm font-bold">
       Formato de cerveza
-      <select value={props.value} onChange={(event) => props.onChange(event.target.value as "latas" | "botellas")} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-bold">
+      <select value={props.value} required={props.required} onChange={(event) => props.onChange(event.target.value as "" | "latas" | "botellas")} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-bold">
+        <option value="">Selecciona lata o botella</option>
         <option value="latas">Latas</option>
         <option value="botellas">Botellas</option>
       </select>

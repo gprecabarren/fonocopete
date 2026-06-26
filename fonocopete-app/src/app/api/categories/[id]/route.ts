@@ -6,6 +6,10 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
   if (!(await requireAdmin())) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const { id } = await context.params;
+  if (id === "cervezas") {
+    return NextResponse.json({ error: "La categoría Cervezas no se puede eliminar." }, { status: 409 });
+  }
+
   const supabase = createServerSupabaseClient();
   if (!supabase) return NextResponse.json({ ok: true, source: "demo" });
 
