@@ -2789,7 +2789,7 @@ function SettingsAdmin({
           inactiveLabel="No atendiendo"
           activeTone="success"
           inactiveTone="danger"
-          disabled={!draft.attendanceStatusEnabled}
+          disabled={!draft.attendanceStatusEnabled || draft.attendanceScheduleEnabled}
         />
         <BooleanControl
           label="Horario automático del letrero"
@@ -2800,6 +2800,11 @@ function SettingsAdmin({
           activeTone="success"
           disabled={!draft.attendanceStatusEnabled}
         />
+        {draft.attendanceStatusEnabled && draft.attendanceScheduleEnabled ? (
+          <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
+            El estado manual queda desactivado mientras el horario automático esté activo.
+          </p>
+        ) : null}
         {draft.attendanceStatusEnabled && draft.attendanceScheduleEnabled ? (
           <div className="grid gap-2 rounded-lg border border-neutral-200 bg-white p-3 lg:col-span-2">
             <p className="text-sm font-black">Horario semanal</p>
