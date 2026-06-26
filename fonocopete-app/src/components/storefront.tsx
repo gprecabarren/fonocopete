@@ -57,6 +57,7 @@ import type {
 const catalogStorageKey = "fonocopete.catalog";
 const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
+type AdminView = "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings" | "seo";
 
 const latinAmericanPhones = [
   { code: "56", country: "Chile", flag: "🇨🇱", placeholder: "9 1234 5678" },
@@ -119,7 +120,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   );
   const [draft, setDraft] = useState<Product>(productDraft);
   const [bulkText, setBulkText] = useState("");
-  const [adminView, setAdminView] = useState<"orders" | "catalog" | "categories" | "zones" | "faqs" | "settings">("orders");
+  const [adminView, setAdminView] = useState<AdminView>("orders");
   const [productSource, setProductSource] = useState<"local" | "supabase">("local");
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
@@ -221,7 +222,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     ? activeCategory
     : productCategories[0]?.id || "promociones";
   const selectedZone = activeZones.find((zone) => zone.id === customer.zoneId);
-  const activeZone = selectedZone ?? { ...initialDeliveryZones[0], id: "", name: "Sin zona", price: 0, eta: "Por coordinar" };
+  const activeZone = selectedZone ?? { ...initialDeliveryZones[0], id: "", name: "Selecciona zona", price: 0, eta: "" };
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
     return products.filter((product) => {
@@ -330,7 +331,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo válido.";
     if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 dígitos en el teléfono.";
     if (customer.address.trim().length < 3) return "Ingresa tu dirección.";
-    if ((!settings.deliveryEnabled || !settings.addressSearchEnabled || customer.manualAddress) && !customer.zoneId) return "Selecciona una zona de despacho.";
+    if (!customer.zoneId) return "Selecciona una zona de despacho / ciudad.";
     return "";
   }
 
@@ -521,8 +522,10 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       });
       if (!response.ok) throw new Error("No se pudo guardar");
       setSyncStatus("saved");
+      window.setTimeout(() => setSyncStatus("idle"), 1800);
     } catch {
       setSyncStatus("error");
+      window.setTimeout(() => setSyncStatus("idle"), 3500);
     }
   }
 
@@ -601,11 +604,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
               Catálogo vivo, carrito simple y confirmación por WhatsApp para comprar sin pedir PDF.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
-              <Metric icon={<Beer size={20} />} label="Catálogo" value={`${products.filter((p) => p.stock !== "hidden").length} productos`} />
+              <Metric icon={<Beer size={20} />} label="Catálogo" value={`${products.filter((p) => p.stock !== "hidden" && p.category === "promociones").length} promos`} />
               <Metric
                 icon={<Bike size={20} />}
                 label="Zonas habilitadas"
-                value={activeZones.length ? activeZones.map((zone) => zone.name).join(" · ") : "Por coordinar"}
+                value={activeZones.length ? activeZones.map((zone) => zone.name).join(" · ") : "Sin zonas activas"}
               />
               <Metric
                 icon={<CreditCard size={20} />}
@@ -621,8 +624,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
               <span className="inline-flex h-8 items-center rounded-md bg-[#ea044e] px-3 text-white">
                 PedidosYa
               </span>
-              <span className="inline-flex h-8 items-center gap-2 rounded-md bg-sky-100 px-3 text-sky-900">
-                <SiMercadopago size={18} className="text-sky-600" /> Mercado Pago
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black">
+              <span className="text-neutral-400">Aceptamos pago por</span>
+              <span className="inline-flex h-8 items-center gap-2 rounded-md bg-sky-100 px-3 text-sky-950">
+                <SiMercadopago size={20} className="text-sky-600" /> Mercado Pago
               </span>
             </div>
           </div>
@@ -1189,22 +1195,18 @@ function CheckoutPanel(props: {
                 </div>
               ) : null}
               {props.zoneStatus ? <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800">{props.zoneStatus}</p> : null}
-              {manualMode ? (
-                <>
-                  <Input label="Departamento, casa, referencia (opcional)" value={props.customer.addressExtra} onChange={(value) => props.onCustomer("addressExtra", value)} />
-                  <label className="grid gap-1 text-sm font-bold">
-                    Zona de despacho / Ciudad
-                    <select required value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
-                      <option value="">-</option>
-                      {props.deliveryZones.map((zone) => (
-                        <option key={zone.id} value={zone.id}>
-                          {zone.name}{props.deliveryEnabled ? ` - ${formatCurrency(zone.price)}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </>
-              ) : null}
+              <Input label="Departamento, casa, referencia (opcional)" value={props.customer.addressExtra} onChange={(value) => props.onCustomer("addressExtra", value)} />
+              <label className="grid gap-1 text-sm font-bold">
+                Zona de despacho / Ciudad
+                <select required value={props.customer.zoneId} onChange={(event) => props.onCustomer("zoneId", event.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium">
+                  <option value="">-</option>
+                  {props.deliveryZones.map((zone) => (
+                    <option key={zone.id} value={zone.id}>
+                      {zone.name}{props.deliveryEnabled ? ` - ${formatCurrency(zone.price)}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {canSearchAddress && !manualMode ? (
                 <p className="text-xs font-semibold text-neutral-500">
                   Búsqueda por <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a> (Beta).
@@ -1304,7 +1306,7 @@ function PaymentDialog(props: {
               Registrar y confirmar por WhatsApp
             </button>
             {lockedMethod === "cash_on_delivery" && !whatsappSent ? (
-              <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs font-black text-amber-900">Obligatorio: ahora presiona el botón de WhatsApp para enviar los datos del pedido.</p>
+              <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs font-black text-amber-900">Obligatorio: ahora presiona WhatsApp para enviar el comprobante o coordinar con el encargado del despacho.</p>
             ) : null}
           </section>
           <section className={`rounded-lg border p-4 ${!props.settings.advancePaymentEnabled || lockedMethod === "cash_on_delivery" ? "border-neutral-200 bg-neutral-50 opacity-60" : "border-neutral-200"}`}>
@@ -1346,7 +1348,7 @@ function PaymentDialog(props: {
               </div>
             )}
             {lockedMethod && lockedMethod !== "cash_on_delivery" && !whatsappSent ? (
-              <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs font-black text-amber-900">Obligatorio: después de registrar, avisa por WhatsApp para que podamos revisar el pago.</p>
+              <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs font-black text-amber-900">Obligatorio: después de registrar, avisa por WhatsApp para enviar el comprobante y coordinar con el encargado.</p>
             ) : null}
           </section>
         </div>
@@ -1390,8 +1392,8 @@ function AdminPanel(props: {
   bulkText: string;
   setBulkText: (value: string) => void;
   importBulkProducts: () => Promise<void>;
-  adminView: "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings";
-  setAdminView: (value: "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings") => void;
+  adminView: AdminView;
+  setAdminView: (value: AdminView) => void;
   productSource: "local" | "supabase";
   syncStatus: "idle" | "syncing" | "saved" | "error";
   onSaveProduct: (product: Product) => Promise<void>;
@@ -1478,6 +1480,7 @@ function AdminPanel(props: {
             <SegmentButton active={props.adminView === "zones"} onClick={() => props.setAdminView("zones")}>Zonas</SegmentButton>
             <SegmentButton active={props.adminView === "faqs"} onClick={() => props.setAdminView("faqs")}>FAQ</SegmentButton>
             <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
+            <SegmentButton active={props.adminView === "seo"} onClick={() => props.setAdminView("seo")}>SEO</SegmentButton>
             <button type="button" onClick={() => void logout()} className="flex h-10 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm font-black">
               <LogOut size={16} />
               Salir
@@ -1497,9 +1500,15 @@ function AdminPanel(props: {
           <ZonesAdmin zones={props.deliveryZones} setZones={props.setDeliveryZones} />
         ) : props.adminView === "faqs" ? (
           <FaqAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} />
-        ) : (
+        ) : props.adminView === "settings" ? (
           <SettingsAdmin
             key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}`}
+            settings={props.settings}
+            onSaveSettings={props.onSaveSettings}
+            syncStatus={props.syncStatus}
+          />
+        ) : (
+          <SeoAdmin
             settings={props.settings}
             onSaveSettings={props.onSaveSettings}
             syncStatus={props.syncStatus}
@@ -2001,6 +2010,7 @@ function SettingsAdmin({
       event.preventDefault();
       void onSaveSettings(draft);
     }} className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 lg:grid-cols-2">
+      <SaveSettingsButton syncStatus={syncStatus} label="Guardar ajustes" savedLabel="Ajustes guardados" />
       <Input label="Nombre del negocio" value={draft.businessName} onChange={(value) => setDraft({ ...draft, businessName: value })} />
       <Input label="WhatsApp" value={draft.whatsappNumber} onChange={(value) => setDraft({ ...draft, whatsappNumber: value })} />
       <Input label="Correo de contacto" type="email" value={draft.contactEmail} onChange={(value) => setDraft({ ...draft, contactEmail: value })} />
@@ -2049,8 +2059,17 @@ function SettingsAdmin({
       <div className="lg:col-span-2">
         <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
       </div>
+      <BooleanControl
+        label="Mensaje editable de WhatsApp (Beta)"
+        value={false}
+        onChange={() => undefined}
+        activeLabel="Activar"
+        inactiveLabel="Desactivar"
+        activeTone="success"
+        disabled
+      />
       <div className="lg:col-span-2">
-        <Textarea label="Mensaje inicial de WhatsApp (Beta)" value={draft.whatsappMessageIntro} onChange={(value) => setDraft({ ...draft, whatsappMessageIntro: value })} />
+        <Textarea label="Mensaje inicial de WhatsApp (Beta)" value={draft.whatsappMessageIntro} onChange={() => undefined} disabled />
       </div>
       <Input label="Banco" value={draft.bankDetails.bank} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, bank: value } })} />
       <Input label="Titular" value={draft.bankDetails.accountHolder} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountHolder: value } })} />
@@ -2058,36 +2077,67 @@ function SettingsAdmin({
       <Input label="Número de cuenta" value={draft.bankDetails.accountNumber} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountNumber: value } })} />
       <Input label="RUT" value={draft.bankDetails.rut} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, rut: value } })} />
       <Input label="Correo pagos" type="email" value={draft.bankDetails.email} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, email: value } })} />
-      <fieldset className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 lg:col-span-2 lg:grid-cols-2">
-        <legend className="px-1 text-sm font-black">SEO</legend>
-        <Input label="Título SEO" value={draft.seo.title} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, title: value } })} />
-        <Input label="Plantilla de título" value={draft.seo.titleTemplate} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, titleTemplate: value } })} />
-        <div className="lg:col-span-2">
-          <Textarea label="Descripción SEO" value={draft.seo.description} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, description: value } })} />
-        </div>
-        <div className="lg:col-span-2">
-          <Textarea label="Palabras clave separadas por coma" value={draft.seo.keywords} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, keywords: value } })} />
-        </div>
-        <Input label="Open Graph título" value={draft.seo.ogTitle} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, ogTitle: value } })} />
-        <Input label="Twitter título" value={draft.seo.twitterTitle} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, twitterTitle: value } })} />
-        <div className="lg:col-span-2">
-          <Textarea label="Open Graph descripción" value={draft.seo.ogDescription} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, ogDescription: value } })} />
-        </div>
-        <div className="lg:col-span-2">
-          <Textarea label="Twitter descripción" value={draft.seo.twitterDescription} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, twitterDescription: value } })} />
-        </div>
-        <Input label="Ruta canonical" value={draft.seo.canonicalPath} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, canonicalPath: value } })} />
-      </fieldset>
-      <button
-        disabled={syncStatus === "syncing"}
-        className={`action-button flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-black text-white disabled:cursor-wait lg:col-span-2 ${
-          syncStatus === "saved" ? "bg-green-600" : syncStatus === "error" ? "bg-red-700" : "bg-neutral-950"
-        }`}
-      >
-        {syncStatus === "saved" ? <Check size={18} /> : <Save size={18} />}
-        {syncStatus === "syncing" ? "Guardando..." : syncStatus === "saved" ? "Ajustes guardados" : syncStatus === "error" ? "Reintentar guardado" : "Guardar ajustes"}
-      </button>
     </form>
+  );
+}
+
+function SeoAdmin({
+  settings,
+  onSaveSettings,
+  syncStatus,
+}: {
+  settings: SiteSettings;
+  onSaveSettings: (settings: SiteSettings) => Promise<void>;
+  syncStatus: "idle" | "syncing" | "saved" | "error";
+}) {
+  const [draft, setDraft] = useState(settings);
+
+  return (
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      void onSaveSettings(draft);
+    }} className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 lg:grid-cols-2">
+      <SaveSettingsButton syncStatus={syncStatus} label="Guardar SEO" savedLabel="SEO guardado" />
+      <Input label="Título SEO" value={draft.seo.title} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, title: value } })} />
+      <Input label="Plantilla de título" value={draft.seo.titleTemplate} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, titleTemplate: value } })} />
+      <div className="lg:col-span-2">
+        <Textarea label="Descripción SEO" value={draft.seo.description} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, description: value } })} />
+      </div>
+      <div className="lg:col-span-2">
+        <Textarea label="Palabras clave separadas por coma" value={draft.seo.keywords} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, keywords: value } })} />
+      </div>
+      <Input label="Open Graph título" value={draft.seo.ogTitle} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, ogTitle: value } })} />
+      <Input label="Twitter título" value={draft.seo.twitterTitle} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, twitterTitle: value } })} />
+      <div className="lg:col-span-2">
+        <Textarea label="Open Graph descripción" value={draft.seo.ogDescription} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, ogDescription: value } })} />
+      </div>
+      <div className="lg:col-span-2">
+        <Textarea label="Twitter descripción" value={draft.seo.twitterDescription} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, twitterDescription: value } })} />
+      </div>
+      <Input label="Ruta canonical" value={draft.seo.canonicalPath} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, canonicalPath: value } })} />
+    </form>
+  );
+}
+
+function SaveSettingsButton({
+  syncStatus,
+  label,
+  savedLabel,
+}: {
+  syncStatus: "idle" | "syncing" | "saved" | "error";
+  label: string;
+  savedLabel: string;
+}) {
+  return (
+    <button
+      disabled={syncStatus === "syncing"}
+      className={`action-button flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-black text-white disabled:cursor-wait lg:col-span-2 ${
+        syncStatus === "saved" ? "bg-green-600" : syncStatus === "error" ? "bg-red-700" : "bg-neutral-950"
+      }`}
+    >
+      {syncStatus === "saved" ? <Check size={18} /> : <Save size={18} />}
+      {syncStatus === "syncing" ? "Guardando..." : syncStatus === "saved" ? savedLabel : syncStatus === "error" ? "Reintentar guardado" : label}
+    </button>
   );
 }
 
@@ -2280,11 +2330,16 @@ function Input(props: { label: string; value: string; onChange: (value: string) 
   );
 }
 
-function Textarea(props: { label: string; value: string; onChange: (value: string) => void }) {
+function Textarea(props: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) {
   return (
     <label className="grid gap-1 text-sm font-bold">
       {props.label}
-      <textarea value={props.value} onChange={(event) => props.onChange(event.target.value)} className="min-h-20 rounded-lg border border-neutral-300 px-3 py-2" />
+      <textarea
+        value={props.value}
+        disabled={props.disabled}
+        onChange={(event) => props.onChange(event.target.value)}
+        className="min-h-20 rounded-lg border border-neutral-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:bg-white disabled:text-neutral-500"
+      />
     </label>
   );
 }
@@ -2373,8 +2428,8 @@ function OrderTotals({
         <span>{deliveryEnabled ? formatCurrency(delivery) : "Sin cobro"}</span>
       </div>
       <div className="mt-2 flex items-center justify-between text-xs font-black uppercase tracking-wide text-neutral-500">
-        <span>{deliveryEnabled ? zone.name : "Por coordinar"}</span>
-        <span>{deliveryEnabled ? zone.eta : "WhatsApp"}</span>
+        <span>{zone.name}</span>
+        <span>{deliveryEnabled ? zone.eta : "Sin cobro"}</span>
       </div>
       <div className="mt-3 flex items-center justify-between border-t border-neutral-300 pt-3 text-xl font-black">
         <span>Total</span>
