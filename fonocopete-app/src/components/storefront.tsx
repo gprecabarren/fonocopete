@@ -1893,15 +1893,35 @@ function FaqAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSave
   const [items, setItems] = useState<FaqItem[]>(settings.faqs);
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+      <div className="flex flex-col gap-3 rounded-lg bg-neutral-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">Contenido del sitio</p>
+          <h3 className="mt-1 text-xl font-black">Preguntas frecuentes</h3>
+          <p className="mt-1 text-sm font-semibold text-neutral-300">Edita las dudas que verán los clientes antes de comprar.</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setItems([...items, { id: crypto.randomUUID(), question: "Nueva pregunta", answer: "Nueva respuesta" }])}
+          className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-black text-neutral-950"
+        >
+          <Plus size={18} />
+          Agregar pregunta
+        </button>
+      </div>
       {items.map((faq) => (
-        <div key={faq.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4">
+        <div key={faq.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
+            <span className="grid size-8 place-items-center rounded-lg bg-red-50 text-sm font-black text-red-700">
+              {items.indexOf(faq) + 1}
+            </span>
+            <p className="text-sm font-black uppercase tracking-wide text-neutral-500">Pregunta frecuente</p>
+          </div>
           <Input label="Pregunta" value={faq.question} onChange={(question) => setItems(items.map((item) => item.id === faq.id ? { ...item, question } : item))} />
           <Textarea label="Respuesta" value={faq.answer} onChange={(answer) => setItems(items.map((item) => item.id === faq.id ? { ...item, answer } : item))} />
           <button type="button" onClick={() => setItems(items.filter((item) => item.id !== faq.id))} className="action-button h-10 rounded-lg bg-red-50 text-sm font-black text-red-700">Eliminar</button>
         </div>
       ))}
-      <button type="button" onClick={() => setItems([...items, { id: crypto.randomUUID(), question: "Nueva pregunta", answer: "Nueva respuesta" }])} className="action-button h-11 rounded-lg border border-neutral-300 bg-white text-sm font-black">Agregar pregunta</button>
       <button type="button" onClick={() => void onSaveSettings({ ...settings, faqs: items })} className="action-button h-11 rounded-lg bg-neutral-950 text-sm font-black text-white">Guardar preguntas frecuentes</button>
     </div>
   );
@@ -2319,94 +2339,116 @@ function SettingsAdmin({
     <form onSubmit={(event) => {
       event.preventDefault();
       void onSaveSettings(draft);
-    }} className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 lg:grid-cols-2">
+    }} className="grid gap-4">
       <SaveSettingsButton syncStatus={syncStatus} label="Guardar ajustes" savedLabel="Ajustes guardados" />
-      <Input label="Nombre del negocio" value={draft.businessName} onChange={(value) => setDraft({ ...draft, businessName: value })} />
-      <WhatsAppSettingsInput value={draft.whatsappNumber} onChange={(whatsappNumber) => setDraft({ ...draft, whatsappNumber })} />
-      <Input label="Correo de contacto" type="email" value={draft.contactEmail} onChange={(value) => setDraft({ ...draft, contactEmail: value })} />
-      <SocialHandleInput label="Instagram" prefix="instagram.com/" domain="instagram.com" value={draft.instagramUrl} onChange={(instagramUrl) => setDraft({ ...draft, instagramUrl })} />
-      <SocialHandleInput label="Facebook" prefix="facebook.com/" domain="facebook.com" value={draft.facebookUrl} onChange={(facebookUrl) => setDraft({ ...draft, facebookUrl })} />
-      <Input label="Link Mercado Pago" value={draft.mercadoPagoLink} onChange={(value) => setDraft({ ...draft, mercadoPagoLink: value })} />
-      <BooleanControl
-        label="Modo mantenimiento"
-        value={draft.maintenanceMode}
-        onChange={(maintenanceMode) => setDraft({ ...draft, maintenanceMode })}
-        activeLabel="Activar"
-        inactiveLabel="Desactivar"
-        activeTone="danger"
-      />
-      <BooleanControl
-        label="Aviso de atención en inicio"
-        value={draft.attendanceStatusEnabled}
-        onChange={(attendanceStatusEnabled) => setDraft({ ...draft, attendanceStatusEnabled })}
-        activeLabel="Activar"
-        inactiveLabel="Desactivar"
-        activeTone="success"
-      />
-      <BooleanControl
-        label="Estado actual de atención"
-        value={draft.isAttending}
-        onChange={(isAttending) => setDraft({ ...draft, isAttending })}
-        activeLabel="Atendiendo"
-        inactiveLabel="No atendiendo"
-        activeTone="success"
-        inactiveTone="danger"
-        disabled={!draft.attendanceStatusEnabled}
-      />
-      <BooleanControl
-        label="Cálculo y cobro de despacho"
-        value={draft.deliveryEnabled}
-        onChange={(deliveryEnabled) => setDraft({ ...draft, deliveryEnabled, addressSearchEnabled: deliveryEnabled ? draft.addressSearchEnabled : false })}
-        activeLabel="Activar"
-        inactiveLabel="Desactivar"
-        activeTone="success"
-      />
-      <BooleanControl
-        label="Búsqueda por OpenStreetMap (Beta)"
-        value={draft.addressSearchEnabled}
-        onChange={(addressSearchEnabled) => setDraft({ ...draft, addressSearchEnabled: draft.deliveryEnabled ? addressSearchEnabled : false })}
-        activeLabel="Activar"
-        inactiveLabel="Desactivar"
-        activeTone="success"
-        disabled={!draft.deliveryEnabled}
-      />
-      <BooleanControl
-        label="Pago anticipado (Beta)"
-        value={draft.advancePaymentEnabled}
-        onChange={(advancePaymentEnabled) => setDraft({ ...draft, advancePaymentEnabled })}
-        activeLabel="Activar"
-        inactiveLabel="Desactivar"
-        activeTone="success"
-      />
-      <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
-        Si activas mantenimiento, los clientes verán una pantalla cerrada y solo quedará disponible el inicio de sesión del administrador.
-      </p>
-      <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
-        Si desactivas el cálculo de despacho, igualmente se solicitarán dirección, ciudad y zona, pero el costo será $0 y no se mostrará al cliente.
-      </p>
-      <div className="lg:col-span-2">
-        <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
-      </div>
-      <BooleanControl
-        label="Mensaje editable de WhatsApp (Beta)"
-        value={false}
-        onChange={() => undefined}
-        activeLabel="Activar"
-        inactiveLabel="Desactivar"
-        activeTone="success"
-        disabled
-      />
-      <div className="lg:col-span-2">
-        <Textarea label="Mensaje inicial de WhatsApp (Beta)" value={draft.whatsappMessageIntro} onChange={() => undefined} disabled />
-      </div>
-      <Input label="Banco" value={draft.bankDetails.bank} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, bank: value } })} />
-      <Input label="Titular" value={draft.bankDetails.accountHolder} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountHolder: value } })} />
-      <Input label="Tipo de cuenta" value={draft.bankDetails.accountType} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountType: value } })} />
-      <Input label="Número de cuenta" value={draft.bankDetails.accountNumber} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountNumber: value } })} />
-      <Input label="RUT" value={draft.bankDetails.rut} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, rut: value } })} />
-      <Input label="Correo pagos" type="email" value={draft.bankDetails.email} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, email: value } })} />
+      <SettingsSection title="Datos generales" description="Información visible y enlaces principales del negocio.">
+        <Input label="Nombre del negocio" value={draft.businessName} onChange={(value) => setDraft({ ...draft, businessName: value })} />
+        <WhatsAppSettingsInput value={draft.whatsappNumber} onChange={(whatsappNumber) => setDraft({ ...draft, whatsappNumber })} />
+        <Input label="Correo de contacto" type="email" value={draft.contactEmail} onChange={(value) => setDraft({ ...draft, contactEmail: value })} />
+        <SocialHandleInput label="Instagram" prefix="instagram.com/" domain="instagram.com" value={draft.instagramUrl} onChange={(instagramUrl) => setDraft({ ...draft, instagramUrl })} />
+        <SocialHandleInput label="Facebook" prefix="facebook.com/" domain="facebook.com" value={draft.facebookUrl} onChange={(facebookUrl) => setDraft({ ...draft, facebookUrl })} />
+        <Input label="Link Mercado Pago" value={draft.mercadoPagoLink} onChange={(value) => setDraft({ ...draft, mercadoPagoLink: value })} />
+      </SettingsSection>
+      <SettingsSection title="Operación del sitio" description="Activa o pausa funciones principales sin tocar el catálogo.">
+        <BooleanControl
+          label="Modo mantenimiento"
+          value={draft.maintenanceMode}
+          onChange={(maintenanceMode) => setDraft({ ...draft, maintenanceMode })}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="danger"
+        />
+        <BooleanControl
+          label="Aviso de atención en inicio"
+          value={draft.attendanceStatusEnabled}
+          onChange={(attendanceStatusEnabled) => setDraft({ ...draft, attendanceStatusEnabled })}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="success"
+        />
+        <BooleanControl
+          label="Estado actual de atención"
+          value={draft.isAttending}
+          onChange={(isAttending) => setDraft({ ...draft, isAttending })}
+          activeLabel="Atendiendo"
+          inactiveLabel="No atendiendo"
+          activeTone="success"
+          inactiveTone="danger"
+          disabled={!draft.attendanceStatusEnabled}
+        />
+        <BooleanControl
+          label="Cálculo y cobro de despacho"
+          value={draft.deliveryEnabled}
+          onChange={(deliveryEnabled) => setDraft({ ...draft, deliveryEnabled, addressSearchEnabled: deliveryEnabled ? draft.addressSearchEnabled : false })}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="success"
+        />
+        <BooleanControl
+          label="Búsqueda por OpenStreetMap (Beta)"
+          value={draft.addressSearchEnabled}
+          onChange={(addressSearchEnabled) => setDraft({ ...draft, addressSearchEnabled: draft.deliveryEnabled ? addressSearchEnabled : false })}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="success"
+          disabled={!draft.deliveryEnabled}
+        />
+        <BooleanControl
+          label="Pago anticipado (Beta)"
+          value={draft.advancePaymentEnabled}
+          onChange={(advancePaymentEnabled) => setDraft({ ...draft, advancePaymentEnabled })}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="success"
+        />
+        <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
+          Si activas mantenimiento, los clientes verán una pantalla cerrada y solo quedará disponible el inicio de sesión del administrador.
+        </p>
+        <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
+          Si desactivas el cálculo de despacho, igualmente se solicitarán dirección, ciudad y zona, pero el costo será $0 y no se mostrará al cliente.
+        </p>
+      </SettingsSection>
+      <SettingsSection title="Mensajes automáticos" description="Textos que aparecen cuando el sitio está cerrado o al preparar mensajes.">
+        <div className="lg:col-span-2">
+          <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
+        </div>
+        <BooleanControl
+          label="Mensaje editable de WhatsApp (Beta)"
+          value={false}
+          onChange={() => undefined}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="success"
+          disabled
+        />
+        <div className="lg:col-span-2">
+          <Textarea label="Mensaje inicial de WhatsApp (Beta)" value={draft.whatsappMessageIntro} onChange={() => undefined} disabled />
+        </div>
+      </SettingsSection>
+      <SettingsSection title="Datos bancarios para transferencia" description="Estos datos se muestran y se copian desde el proceso de pago.">
+        <Input label="Banco" value={draft.bankDetails.bank} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, bank: value } })} />
+        <Input label="Titular" value={draft.bankDetails.accountHolder} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountHolder: value } })} />
+        <Input label="Tipo de cuenta" value={draft.bankDetails.accountType} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountType: value } })} />
+        <Input label="Número de cuenta" value={draft.bankDetails.accountNumber} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountNumber: value } })} />
+        <Input label="RUT" value={draft.bankDetails.rut} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, rut: value } })} />
+        <Input label="Correo pagos" type="email" value={draft.bankDetails.email} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, email: value } })} />
+      </SettingsSection>
       <SaveSettingsButton syncStatus={syncStatus} label="Guardar ajustes" savedLabel="Ajustes guardados" />
     </form>
+  );
+}
+
+function SettingsSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+  return (
+    <section className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 shadow-sm">
+      <div className="rounded-lg bg-white p-4">
+        <p className="text-xs font-black uppercase tracking-[0.16em] text-red-600">{title}</p>
+        <p className="mt-1 text-sm font-semibold text-neutral-600">{description}</p>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {children}
+      </div>
+    </section>
   );
 }
 
