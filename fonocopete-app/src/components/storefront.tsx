@@ -240,6 +240,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     });
   }, [products, resolvedActiveCategory, activeBeerFormat, query]);
   const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden").slice(0, 2);
+  const visibleProductCount = products.filter((product) => product.stock !== "hidden").length;
+  const promoProductCount = products.filter((product) => product.stock !== "hidden" && product.category === "promociones").length;
   const cartLines = cart
     .map((item) => {
       const product = products.find((entry) => entry.id === item.productId && entry.stock !== "sold_out");
@@ -612,7 +614,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
               Catálogo vivo, carrito simple y confirmación por WhatsApp para comprar sin pedir PDF.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
-              <Metric icon={<Beer size={20} />} label="Catálogo" value={`${products.filter((p) => p.stock !== "hidden" && p.category === "promociones").length} promos`} />
+              <Metric icon={<Beer size={20} />} label="Catálogo" value={`${visibleProductCount} productos · ${promoProductCount} promos`} />
               <Metric
                 icon={<Bike size={20} />}
                 label="Zonas habilitadas"
