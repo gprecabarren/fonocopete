@@ -2640,7 +2640,7 @@ function WhatsAppSettingsInput({ value, onChange }: { value: string; onChange: (
           aria-label="País del WhatsApp"
           value={phoneCountry}
           onChange={(event) => updatePhoneCountry(event.target.value)}
-          className="h-11 max-w-[116px] rounded-l-lg border border-r-0 border-neutral-300 bg-neutral-50 px-2 font-bold"
+          className="h-11 max-w-[116px] rounded-l-lg border border-r-0 border-neutral-300 bg-white px-2 font-bold"
         >
           {latinAmericanPhones.map((country) => (
             <option key={country.code} value={country.code}>
@@ -2654,7 +2654,7 @@ function WhatsAppSettingsInput({ value, onChange }: { value: string; onChange: (
           value={localPhone}
           onChange={(event) => onChange(`+${phoneCountry} ${event.target.value.replace(/\D/g, "")}`)}
           placeholder={countryConfig.placeholder}
-          className="h-11 min-w-0 flex-1 rounded-r-lg border border-neutral-300 px-3 font-medium"
+          className="h-11 min-w-0 flex-1 rounded-r-lg border border-neutral-300 bg-white px-3 font-medium"
         />
       </span>
     </label>
