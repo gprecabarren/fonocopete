@@ -15,7 +15,7 @@ export const defaultSettings: SiteSettings = {
   whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56989351855",
   contactEmail: "fonocopeteconcepcion.maverik@gmail.com",
   instagramUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",
-  facebookUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",
+  facebookUrl: "https://www.facebook.com/",
   mercadoPagoLink: process.env.NEXT_PUBLIC_MERCADOPAGO_LINK || "https://www.mercadopago.cl/",
   whatsappMessageIntro: "Hola, quiero confirmar este pedido de Fonocopete:",
   seo: {

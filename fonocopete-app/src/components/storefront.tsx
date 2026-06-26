@@ -330,7 +330,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (!customer.name.trim()) return "Ingresa tu nombre.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo válido.";
     if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 dígitos en el teléfono.";
-    if (customer.address.trim().length < 3) return "Ingresa tu dirección.";
+    if (!hasStreetAndNumber(customer.address)) return "Ingresa calle y número en la dirección.";
     if (!customer.zoneId) return "Selecciona una zona de despacho / ciudad.";
     return "";
   }
@@ -591,7 +591,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       <Header settings={settings} cartCount={cartCount} />
       <FloatingWhatsApp whatsappNumber={settings.whatsappNumber} />
 
-      <section id="promociones" className="scroll-mt-20 bg-neutral-950 pt-[116px] text-white lg:pt-0">
+      <section id="promociones" className="scroll-mt-20 bg-neutral-950 text-white">
         <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_0.78fr] lg:py-12">
           <div className="flex min-w-0 flex-col justify-center">
             <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
@@ -640,7 +640,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         </div>
       </section>
 
-      <section id="catalogo" className="mx-auto grid max-w-7xl scroll-mt-[128px] gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_390px] lg:scroll-mt-24">
+      <section id="catalogo" className="mx-auto grid max-w-7xl scroll-mt-24 gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_390px]">
         <div className="min-w-0">
           <CatalogToolbar
             query={query}
@@ -712,6 +712,10 @@ function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
   };
 }
 
+function hasStreetAndNumber(address: string) {
+  return /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(address) && /\d/.test(address);
+}
+
 function resizeImage(file: File) {
   return new Promise<string>((resolve, reject) => {
     const image = new Image();
@@ -754,7 +758,8 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
   ];
 
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-neutral-200/80 bg-[#f7f4ef]/95 backdrop-blur supports-[backdrop-filter]:bg-[#f7f4ef]/85 lg:sticky lg:top-0">
+    <>
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-neutral-200/80 bg-[#f7f4ef]/95 backdrop-blur supports-[backdrop-filter]:bg-[#f7f4ef]/85">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-2">
           <button
@@ -785,14 +790,8 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
           </a>
         </div>
       </div>
-      <div className="border-t border-neutral-200/70 bg-white/80">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
-          <span className="text-xs font-black uppercase text-neutral-500">Encuéntranos</span>
-          <SocialLinks settings={settings} className="flex" />
-        </div>
-      </div>
       {menuOpen ? (
-        <nav className="absolute left-4 top-[116px] w-[min(330px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-neutral-200 bg-white p-2 shadow-2xl sm:left-6 lg:top-[72px]">
+        <nav className="absolute left-4 top-[72px] w-[min(330px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-neutral-200 bg-white p-2 shadow-2xl sm:left-6">
           {links.map((link) => (
             <a
               key={link.href}
@@ -813,6 +812,13 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
         </nav>
       ) : null}
     </header>
+    <div className="mt-[68px] border-t border-neutral-200/70 bg-white/80">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
+        <span className="text-xs font-black uppercase text-neutral-500">Encuéntranos</span>
+        <SocialLinks settings={settings} className="flex" />
+      </div>
+    </div>
+    </>
   );
 }
 
@@ -1070,7 +1076,7 @@ function CheckoutPanel(props: {
   }
 
   return (
-    <aside id="checkout" className="min-w-0 scroll-mt-[128px] lg:sticky lg:top-24 lg:self-start lg:scroll-mt-24">
+    <aside id="checkout" className="min-w-0 scroll-mt-24 lg:sticky lg:top-24 lg:self-start">
       <form onSubmit={props.onSubmit} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-xl font-black">
@@ -1265,7 +1271,7 @@ function PaymentDialog(props: {
     if (ok) setWhatsappSent(true);
   }
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-neutral-950/80 px-4 py-6 backdrop-blur">
+    <div className="fixed inset-0 z-[70] grid place-items-center overflow-y-auto bg-neutral-950/80 px-4 py-6 backdrop-blur">
       <div className="w-full max-w-3xl rounded-lg bg-white p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
@@ -1599,7 +1605,10 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
             </div>
             <div className="grid content-start gap-3">
               <label className="grid gap-1 text-sm font-bold">
-                Estado del pedido
+                <span className="flex items-center justify-between gap-2">
+                  Estado del pedido
+                  <StatusPill {...fulfillmentStatusMeta(order.fulfillmentStatus)} />
+                </span>
                 <select value={order.fulfillmentStatus} onChange={(event) => void updateOrder(order, "fulfillmentStatus", event.target.value)} className="h-10 rounded-lg border border-neutral-300 px-2">
                   <option value="new">Nuevo</option>
                   <option value="confirmed">Confirmado</option>
@@ -1610,7 +1619,10 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
                 </select>
               </label>
               <label className="grid gap-1 text-sm font-bold">
-                Estado del pago
+                <span className="flex items-center justify-between gap-2">
+                  Estado del pago
+                  <StatusPill {...paymentStatusMeta(order.paymentStatus)} />
+                </span>
                 <select value={order.paymentStatus} onChange={(event) => void updateOrder(order, "paymentStatus", event.target.value)} className="h-10 rounded-lg border border-neutral-300 px-2">
                   <option value="pending">Pendiente</option>
                   <option value="paid">Pagado</option>
@@ -1641,6 +1653,31 @@ function FaqAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSave
       <button type="button" onClick={() => void onSaveSettings({ ...settings, faqs: items })} className="action-button h-11 rounded-lg bg-neutral-950 text-sm font-black text-white">Guardar preguntas frecuentes</button>
     </div>
   );
+}
+
+function paymentStatusMeta(status: string) {
+  if (status === "paid") return { label: "Pagado", className: "bg-green-100 text-green-800" };
+  if (status === "refunded") return { label: "Reembolsado", className: "bg-sky-100 text-sky-800" };
+  return { label: "Pendiente", className: "bg-amber-100 text-amber-900" };
+}
+
+function fulfillmentStatusMeta(status: string) {
+  const labels: Record<string, string> = {
+    new: "Nuevo",
+    confirmed: "Confirmado",
+    preparing: "Preparando",
+    delivering: "En reparto",
+    completed: "Completado",
+    cancelled: "Cancelado",
+  };
+  if (status === "cancelled") return { label: labels[status], className: "bg-red-100 text-red-800" };
+  if (status === "completed") return { label: labels[status], className: "bg-green-100 text-green-800" };
+  if (status === "delivering") return { label: labels[status], className: "bg-blue-100 text-blue-800" };
+  return { label: labels[status] || "Nuevo", className: "bg-neutral-100 text-neutral-700" };
+}
+
+function StatusPill({ label, className }: { label: string; className: string }) {
+  return <span className={`rounded-md px-2 py-1 text-xs font-black ${className}`}>{label}</span>;
 }
 
 function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct: (productId: string, updater: (product: Product) => Product) => void }) {
@@ -2012,10 +2049,10 @@ function SettingsAdmin({
     }} className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 lg:grid-cols-2">
       <SaveSettingsButton syncStatus={syncStatus} label="Guardar ajustes" savedLabel="Ajustes guardados" />
       <Input label="Nombre del negocio" value={draft.businessName} onChange={(value) => setDraft({ ...draft, businessName: value })} />
-      <Input label="WhatsApp" value={draft.whatsappNumber} onChange={(value) => setDraft({ ...draft, whatsappNumber: value })} />
+      <WhatsAppSettingsInput value={draft.whatsappNumber} onChange={(whatsappNumber) => setDraft({ ...draft, whatsappNumber })} />
       <Input label="Correo de contacto" type="email" value={draft.contactEmail} onChange={(value) => setDraft({ ...draft, contactEmail: value })} />
-      <Input label="Instagram" value={draft.instagramUrl} onChange={(value) => setDraft({ ...draft, instagramUrl: value })} />
-      <Input label="Facebook" value={draft.facebookUrl} onChange={(value) => setDraft({ ...draft, facebookUrl: value })} />
+      <SocialHandleInput label="Instagram" prefix="instagram.com/" domain="instagram.com" value={draft.instagramUrl} onChange={(instagramUrl) => setDraft({ ...draft, instagramUrl })} />
+      <SocialHandleInput label="Facebook" prefix="facebook.com/" domain="facebook.com" value={draft.facebookUrl} onChange={(facebookUrl) => setDraft({ ...draft, facebookUrl })} />
       <Input label="Link Mercado Pago" value={draft.mercadoPagoLink} onChange={(value) => setDraft({ ...draft, mercadoPagoLink: value })} />
       <BooleanControl
         label="Modo mantenimiento"
@@ -2077,6 +2114,7 @@ function SettingsAdmin({
       <Input label="Número de cuenta" value={draft.bankDetails.accountNumber} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountNumber: value } })} />
       <Input label="RUT" value={draft.bankDetails.rut} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, rut: value } })} />
       <Input label="Correo pagos" type="email" value={draft.bankDetails.email} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, email: value } })} />
+      <SaveSettingsButton syncStatus={syncStatus} label="Guardar ajustes" savedLabel="Ajustes guardados" />
     </form>
   );
 }
@@ -2330,6 +2368,94 @@ function Input(props: { label: string; value: string; onChange: (value: string) 
   );
 }
 
+function WhatsAppSettingsInput({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const digits = value.replace(/\D/g, "");
+  const currentCountry =
+    [...latinAmericanPhones].sort((a, b) => b.code.length - a.code.length).find((country) => digits.startsWith(country.code)) ||
+    latinAmericanPhones[0];
+  const [phoneCountry, setPhoneCountry] = useState<string>(currentCountry.code);
+  const countryConfig = latinAmericanPhones.find((country) => country.code === phoneCountry) ?? latinAmericanPhones[0];
+  const localPhone = digits.startsWith(phoneCountry) ? digits.slice(phoneCountry.length) : digits;
+
+  function updatePhoneCountry(nextCode: string) {
+    setPhoneCountry(nextCode);
+    onChange(localPhone ? `+${nextCode} ${localPhone}` : `+${nextCode} `);
+  }
+
+  return (
+    <label className="grid gap-1 text-sm font-bold">
+      WhatsApp
+      <span className="flex min-w-0">
+        <select
+          aria-label="País del WhatsApp"
+          value={phoneCountry}
+          onChange={(event) => updatePhoneCountry(event.target.value)}
+          className="h-11 max-w-[116px] rounded-l-lg border border-r-0 border-neutral-300 bg-neutral-50 px-2 font-bold"
+        >
+          {latinAmericanPhones.map((country) => (
+            <option key={country.code} value={country.code}>
+              {country.flag} +{country.code}
+            </option>
+          ))}
+        </select>
+        <input
+          type="tel"
+          inputMode="numeric"
+          value={localPhone}
+          onChange={(event) => onChange(`+${phoneCountry} ${event.target.value.replace(/\D/g, "")}`)}
+          placeholder={countryConfig.placeholder}
+          className="h-11 min-w-0 flex-1 rounded-r-lg border border-neutral-300 px-3 font-medium"
+        />
+      </span>
+    </label>
+  );
+}
+
+function SocialHandleInput({
+  label,
+  prefix,
+  domain,
+  value,
+  onChange,
+}: {
+  label: string;
+  prefix: string;
+  domain: "instagram.com" | "facebook.com";
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const handle = socialPathFromUrl(value, domain);
+  return (
+    <label className="grid gap-1 text-sm font-bold">
+      {label}
+      <span className="flex min-w-0">
+        <span className="flex h-11 shrink-0 items-center rounded-l-lg border border-r-0 border-neutral-300 bg-neutral-50 px-3 text-xs font-black text-neutral-600 sm:text-sm">
+          {prefix}
+        </span>
+        <input
+          value={handle}
+          onChange={(event) => onChange(socialUrlFromPath(event.target.value, domain))}
+          className="h-11 min-w-0 flex-1 rounded-r-lg border border-neutral-300 bg-white px-3 font-medium"
+        />
+      </span>
+    </label>
+  );
+}
+
+function socialPathFromUrl(value: string, domain: "instagram.com" | "facebook.com") {
+  try {
+    const parsed = new URL(value.startsWith("http") ? value : `https://${value}`);
+    return parsed.hostname.includes(domain) ? parsed.pathname.replace(/^\/+|\/+$/g, "") : "";
+  } catch {
+    return "";
+  }
+}
+
+function socialUrlFromPath(path: string, domain: "instagram.com" | "facebook.com") {
+  const cleanPath = path.replace(/^https?:\/\//, "").replace(domain, "").replace(/^\/+/, "").trim();
+  return `https://www.${domain}/${cleanPath}`;
+}
+
 function Textarea(props: { label: string; value: string; onChange: (value: string) => void; disabled?: boolean }) {
   return (
     <label className="grid gap-1 text-sm font-bold">
@@ -2338,7 +2464,7 @@ function Textarea(props: { label: string; value: string; onChange: (value: strin
         value={props.value}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
-        className="min-h-20 rounded-lg border border-neutral-300 bg-white px-3 py-2 disabled:cursor-not-allowed disabled:bg-white disabled:text-neutral-500"
+        className="min-h-20 rounded-lg border border-neutral-300 bg-white px-3 py-2 font-medium disabled:cursor-not-allowed disabled:bg-white disabled:text-neutral-500"
       />
     </label>
   );

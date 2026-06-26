@@ -43,6 +43,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase: new URL(siteUrl),
+    icons: {
+      icon: "/icon.png",
+      apple: "/apple-icon.png",
+    },
     title: {
       default: seo.title,
       template: seo.titleTemplate,
@@ -57,11 +61,20 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: "Fonocopete Concepcion",
       title: seo.ogTitle,
       description: seo.ogDescription,
+      images: [
+        {
+          url: "/fonocopete-logo-circle.jpg",
+          width: 900,
+          height: 900,
+          alt: "Fonocopete Concepcion",
+        },
+      ],
     },
     twitter: {
       card: "summary_large_image",
       title: seo.twitterTitle,
       description: seo.twitterDescription,
+      images: ["/fonocopete-logo-circle.jpg"],
     },
     category: "Botilleria y delivery de bebidas",
     robots: {
