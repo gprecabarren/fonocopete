@@ -476,6 +476,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   async function deleteProduct(productId: string) {
+    const product = products.find((item) => item.id === productId);
+    if (!window.confirm(`¿Eliminar definitivamente ${product?.name || "este producto"} del catálogo?`)) return;
     setProducts((current) => current.filter((product) => product.id !== productId));
     await fetch(`/api/products/${productId}`, { method: "DELETE" }).catch(() => setSyncStatus("error"));
   }
