@@ -851,7 +851,7 @@ function SocialLinks({ settings, className = "" }: { settings: SiteSettings; cla
     <div className={`items-center gap-1 ${className}`}>
       <SocialIcon href={settings.instagramUrl} label="Instagram" hoverClass="hover:border-pink-500 hover:text-pink-600"><FaInstagram size={18} /></SocialIcon>
       <SocialIcon href={settings.facebookUrl} label="Facebook" hoverClass="hover:border-blue-600 hover:text-blue-600"><FaFacebookF size={17} /></SocialIcon>
-      <SocialIcon href={`mailto:${settings.contactEmail}`} label="Correo" hoverClass="hover:border-red-500 hover:text-red-600"><Mail size={18} /></SocialIcon>
+      <SocialIcon href={`mailto:${settings.contactEmail}`} label="Correo" hoverClass="hover:border-amber-500 hover:text-amber-600"><Mail size={18} /></SocialIcon>
       <SocialIcon href={whatsappUrl} label="WhatsApp" hoverClass="hover:border-green-500 hover:text-green-600"><FaWhatsapp size={19} /></SocialIcon>
     </div>
   );
@@ -2012,15 +2012,22 @@ function orderMatchesDate(createdAt: string, mode: "day" | "month" | "year", val
 
 function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct: (productId: string, updater: (product: Product) => Product) => void }) {
   const [productView, setProductView] = useState("__latest");
+  const [adminProductQuery, setAdminProductQuery] = useState("");
   const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
   const categoryIds = useMemo(() => new Set(props.categories.map((category) => category.id)), [props.categories]);
   const uncategorizedProducts = props.products.filter((product) => !categoryIds.has(product.category));
-  const visibleAdminProducts =
+  const baseAdminProducts =
     productView === "__latest"
       ? props.products.slice(0, 5)
       : productView === "__uncategorized"
         ? uncategorizedProducts
         : props.products.filter((product) => product.category === productView);
+  const cleanAdminProductQuery = normalizeText(adminProductQuery);
+  const visibleAdminProducts = cleanAdminProductQuery
+    ? props.products.filter((product) =>
+        normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category}`).includes(cleanAdminProductQuery),
+      )
+    : baseAdminProducts;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
@@ -2042,7 +2049,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             />
             <SelectCategory categories={props.categories} value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category, beerFormat: category === "cervezas" ? props.draft.beerFormat : null })} />
             {props.draft.category === "cervezas" ? <SelectBeerFormat value={props.draft.beerFormat || ""} onChange={(beerFormat) => props.setDraft({ ...props.draft, beerFormat: beerFormat || null })} required /> : null}
-            <Input label="Formato / volumen" placeholder="Ej: 750 ml, 1 L, six pack, 40°" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
+            <Input label="Volumen" placeholder="Ej: 750 ml, 1 L, 40°" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
             <div className="grid gap-2">
               <span className="text-sm font-bold">Imagen del producto</span>
               <div className="grid grid-cols-2 gap-2">
@@ -2080,6 +2087,18 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             <h3 className="text-lg font-black">Productos subidos</h3>
             <p className="text-sm font-semibold text-neutral-600">Edita por categoría o revisa los últimos productos agregados.</p>
           </div>
+          <label className="mb-3 block">
+            <span className="sr-only">Buscar producto subido</span>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" size={18} />
+              <input
+                value={adminProductQuery}
+                onChange={(event) => setAdminProductQuery(event.target.value)}
+                placeholder="Buscar producto subido"
+                className="h-11 w-full rounded-lg border border-neutral-300 bg-white pl-10 pr-3 text-sm font-bold"
+              />
+            </div>
+          </label>
           <div className="flex max-w-full gap-2 overflow-x-auto pb-2">
             <CatalogFilterButton active={productView === "__latest"} onClick={() => setProductView("__latest")}>
               Últimos 5
@@ -2224,7 +2243,7 @@ function ProductAdminCard({
           ) : null}
           <input
             value={product.volume}
-            placeholder="Formato / volumen: 750 ml, 1 L, 40°"
+            placeholder="Volumen: 750 ml, 1 L, 40°"
             onChange={(event) => update({ ...product, volume: event.target.value })}
             className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold"
           />
@@ -2323,10 +2342,18 @@ function CategoriesAdmin({
 }) {
   const [newLabel, setNewLabel] = useState("");
   const [status, setStatus] = useState("");
+  const [categoryQuery, setCategoryQuery] = useState("");
   const productCounts = useMemo(
     () => new Map(categories.map((category) => [category.id, products.filter((product) => product.category === category.id).length])),
     [categories, products],
   );
+  const filteredCategories = categories.filter((category) => normalizeText(category.label).includes(normalizeText(categoryQuery)));
+
+  function hasDuplicateCategoryName(label: string, currentId?: string) {
+    const cleanLabel = normalizeText(label);
+    if (!cleanLabel) return false;
+    return categories.some((category) => category.id !== currentId && normalizeText(category.label) === cleanLabel);
+  }
 
   function slugify(value: string) {
     return normalizeText(value)
@@ -2335,6 +2362,13 @@ function CategoriesAdmin({
   }
 
   async function saveCategories(nextCategories: ProductCategory[], successMessage: string) {
+    const duplicatedName = nextCategories.some((category, index) =>
+      nextCategories.some((otherCategory, otherIndex) => otherIndex !== index && normalizeText(otherCategory.label) === normalizeText(category.label)),
+    );
+    if (duplicatedName) {
+      setStatus("No puedes guardar dos categorías con el mismo nombre.");
+      return;
+    }
     const ordered = nextCategories.map((category, index) => ({ ...category, sortOrder: index + 1 }));
     const response = await fetch("/api/categories", {
       method: "POST",
@@ -2354,7 +2388,7 @@ function CategoriesAdmin({
     event.preventDefault();
     const id = slugify(newLabel);
     if (!id) return;
-    if (categories.some((category) => category.id === id)) {
+    if (categories.some((category) => category.id === id) || hasDuplicateCategoryName(newLabel)) {
       setStatus("Ya existe una categoría con ese nombre.");
       return;
     }
@@ -2415,16 +2449,31 @@ function CategoriesAdmin({
             <Save size={18} /> Guardar categorías
           </button>
         </div>
-        {categories.map((category, index) => (
+        <label className="relative block">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" size={18} />
+          <input
+            value={categoryQuery}
+            onChange={(event) => setCategoryQuery(event.target.value)}
+            placeholder="Buscar categoría"
+            className="h-11 w-full rounded-lg border border-neutral-300 bg-white pl-10 pr-3 text-sm font-bold"
+          />
+        </label>
+        {filteredCategories.map((category) => {
+          const index = categories.findIndex((item) => item.id === category.id);
+          const duplicateName = hasDuplicateCategoryName(category.label, category.id);
+          return (
           <div key={category.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-3 sm:grid-cols-[88px_minmax(0,1fr)_auto] sm:items-center">
             <span className="text-sm font-black text-neutral-400">Orden {index + 1}</span>
-            <input
-              value={category.label}
-              onChange={(event) =>
-                setCategories(categories.map((item) => item.id === category.id ? { ...item, label: event.target.value } : item))
-              }
-              className="h-10 min-w-0 rounded-lg border border-neutral-300 px-3 font-bold"
-            />
+            <label className="grid gap-1">
+              <input
+                value={category.label}
+                onChange={(event) =>
+                  setCategories(categories.map((item) => item.id === category.id ? { ...item, label: event.target.value } : item))
+                }
+                className={`h-10 min-w-0 rounded-lg border px-3 font-bold ${duplicateName ? "border-red-400 bg-red-50" : "border-neutral-300 bg-white"}`}
+              />
+              {duplicateName ? <span className="text-xs font-bold text-red-700">Ya existe una categoría con ese nombre.</span> : null}
+            </label>
             <div className="flex gap-2">
               <span className="grid h-10 min-w-20 place-items-center rounded-lg bg-neutral-100 px-3 text-xs font-black text-neutral-600">
                 {productCounts.get(category.id) ?? 0} prod.
@@ -2440,7 +2489,13 @@ function CategoriesAdmin({
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
+        {!filteredCategories.length ? (
+          <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-6 text-center text-sm font-bold text-neutral-500">
+            No hay categorías con esa búsqueda.
+          </div>
+        ) : null}
       </div>
     </div>
   );
