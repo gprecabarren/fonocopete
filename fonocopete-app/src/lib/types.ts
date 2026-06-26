@@ -120,6 +120,8 @@ export type SeoSettings = {
 export type SiteSettings = {
   businessName: string;
   maintenanceMode: boolean;
+  attendanceStatusEnabled: boolean;
+  isAttending: boolean;
   deliveryEnabled: boolean;
   addressSearchEnabled: boolean;
   advancePaymentEnabled: boolean;

@@ -599,9 +599,12 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       <section id="promociones" className="scroll-mt-20 bg-neutral-950 text-white">
         <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_0.78fr] lg:py-12">
           <div className="flex min-w-0 flex-col justify-center">
-            <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
-              <ShieldCheck size={17} />
-              Solo mayores de 18 años
+            <div className="mb-5 flex flex-wrap items-center gap-3">
+              <div className="inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
+                <ShieldCheck size={17} />
+                Solo mayores de 18 años
+              </div>
+              {settings.attendanceStatusEnabled ? <BusinessStatusSign isAttending={settings.isAttending} /> : null}
             </div>
             <h1 className="text-4xl font-black uppercase leading-tight sm:text-6xl">Fonocopete</h1>
             <p className="mt-2 text-xl font-black uppercase text-red-500 sm:text-3xl">Concepción</p>
@@ -962,6 +965,26 @@ function CatalogToolbar(props: {
         </div>
       ) : null}
     </>
+  );
+}
+
+function BusinessStatusSign({ isAttending }: { isAttending: boolean }) {
+  return (
+    <div
+      className={`relative inline-flex min-h-10 items-center gap-2 rounded-lg border px-3 py-2 text-xs font-black uppercase tracking-[0.18em] shadow-2xl ${
+        isAttending
+          ? "border-emerald-300/70 bg-emerald-400/10 text-emerald-100 shadow-emerald-500/20"
+          : "border-red-400/70 bg-red-500/10 text-red-100 shadow-red-500/20"
+      }`}
+      aria-label={isAttending ? "Estado: atendiendo" : "Estado: cerrado"}
+    >
+      <span
+        className={`size-2.5 rounded-full ${isAttending ? "animate-pulse bg-emerald-300 shadow-[0_0_14px_rgba(110,231,183,0.95)]" : "bg-red-400 shadow-[0_0_14px_rgba(248,113,113,0.95)]"}`}
+      />
+      <span className={isAttending ? "drop-shadow-[0_0_8px_rgba(110,231,183,0.85)]" : "drop-shadow-[0_0_8px_rgba(248,113,113,0.8)]"}>
+        {isAttending ? "Atendiendo" : "Cerrado"}
+      </span>
+    </div>
   );
 }
 
@@ -1573,7 +1596,7 @@ function AdminPanel(props: {
           <FaqAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} />
         ) : props.adminView === "settings" ? (
           <SettingsAdmin
-            key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}`}
+            key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}-${props.settings.attendanceStatusEnabled}-${props.settings.isAttending}`}
             settings={props.settings}
             onSaveSettings={props.onSaveSettings}
             syncStatus={props.syncStatus}
@@ -2313,6 +2336,24 @@ function SettingsAdmin({
         activeTone="danger"
       />
       <BooleanControl
+        label="Aviso de atención en inicio"
+        value={draft.attendanceStatusEnabled}
+        onChange={(attendanceStatusEnabled) => setDraft({ ...draft, attendanceStatusEnabled })}
+        activeLabel="Activar"
+        inactiveLabel="Desactivar"
+        activeTone="success"
+      />
+      <BooleanControl
+        label="Estado actual de atención"
+        value={draft.isAttending}
+        onChange={(isAttending) => setDraft({ ...draft, isAttending })}
+        activeLabel="Atendiendo"
+        inactiveLabel="No atendiendo"
+        activeTone="success"
+        inactiveTone="danger"
+        disabled={!draft.attendanceStatusEnabled}
+      />
+      <BooleanControl
         label="Cálculo y cobro de despacho"
         value={draft.deliveryEnabled}
         onChange={(deliveryEnabled) => setDraft({ ...draft, deliveryEnabled, addressSearchEnabled: deliveryEnabled ? draft.addressSearchEnabled : false })}
@@ -2436,6 +2477,7 @@ function BooleanControl({
   activeLabel,
   inactiveLabel,
   activeTone,
+  inactiveTone = "neutral",
   disabled = false,
 }: {
   label: string;
@@ -2444,9 +2486,11 @@ function BooleanControl({
   activeLabel: string;
   inactiveLabel: string;
   activeTone: "success" | "danger";
+  inactiveTone?: "neutral" | "danger";
   disabled?: boolean;
 }) {
   const activeClass = activeTone === "danger" ? "bg-red-600 text-white" : "bg-green-600 text-white";
+  const inactiveClass = inactiveTone === "danger" ? "bg-red-600 text-white" : "bg-neutral-950 text-white";
   return (
     <fieldset className="rounded-lg border border-neutral-200 bg-white p-3">
       <legend className="px-1 text-sm font-black">{label}</legend>
@@ -2465,7 +2509,7 @@ function BooleanControl({
           aria-pressed={!value}
           disabled={disabled}
           onClick={() => onChange(false)}
-          className={`action-button h-10 rounded-lg text-sm font-black disabled:cursor-not-allowed disabled:opacity-40 ${!value ? "bg-neutral-950 text-white" : "bg-neutral-100 text-neutral-600"}`}
+          className={`action-button h-10 rounded-lg text-sm font-black disabled:cursor-not-allowed disabled:opacity-40 ${!value ? inactiveClass : "bg-neutral-100 text-neutral-600"}`}
         >
           {inactiveLabel}
         </button>

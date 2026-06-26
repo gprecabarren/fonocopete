@@ -27,6 +27,8 @@ function withRuntimeOverrides(settings: SiteSettings) {
 const settingsSchema = z.object({
   businessName: z.string().min(1),
   maintenanceMode: z.boolean(),
+  attendanceStatusEnabled: z.boolean(),
+  isAttending: z.boolean(),
   deliveryEnabled: z.boolean(),
   addressSearchEnabled: z.boolean(),
   advancePaymentEnabled: z.boolean(),

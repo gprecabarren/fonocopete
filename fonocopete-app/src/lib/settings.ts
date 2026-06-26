@@ -7,6 +7,8 @@ const forceMaintenance =
 export const defaultSettings: SiteSettings = {
   businessName: "Fonocopete MAVERIK",
   maintenanceMode: forceMaintenance,
+  attendanceStatusEnabled: true,
+  isAttending: true,
   deliveryEnabled: true,
   addressSearchEnabled: false,
   advancePaymentEnabled: true,
