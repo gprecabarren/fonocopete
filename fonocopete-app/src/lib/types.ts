@@ -117,11 +117,20 @@ export type SeoSettings = {
   canonicalPath: string;
 };
 
+export type AttendanceScheduleDay = {
+  day: number;
+  enabled: boolean;
+  open: string;
+  close: string;
+};
+
 export type SiteSettings = {
   businessName: string;
   maintenanceMode: boolean;
   attendanceStatusEnabled: boolean;
   isAttending: boolean;
+  attendanceScheduleEnabled: boolean;
+  attendanceSchedule: AttendanceScheduleDay[];
   deliveryEnabled: boolean;
   addressSearchEnabled: boolean;
   advancePaymentEnabled: boolean;
@@ -135,4 +144,5 @@ export type SiteSettings = {
   seo: SeoSettings;
   faqs: FaqItem[];
   bankDetails: BankDetails;
+  productOrder: Record<string, string[]>;
 };

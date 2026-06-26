@@ -4,11 +4,23 @@ import { faqs } from "./catalog";
 const forceMaintenance =
   process.env.NEXT_PUBLIC_FORCE_MAINTENANCE === "true" || process.env.FORCE_MAINTENANCE === "true";
 
+const defaultAttendanceSchedule = [
+  { day: 1, enabled: true, open: "12:00", close: "23:59" },
+  { day: 2, enabled: true, open: "12:00", close: "23:59" },
+  { day: 3, enabled: true, open: "12:00", close: "23:59" },
+  { day: 4, enabled: true, open: "12:00", close: "23:59" },
+  { day: 5, enabled: true, open: "12:00", close: "23:59" },
+  { day: 6, enabled: true, open: "12:00", close: "23:59" },
+  { day: 0, enabled: true, open: "12:00", close: "23:59" },
+];
+
 export const defaultSettings: SiteSettings = {
   businessName: "Fonocopete MAVERIK",
   maintenanceMode: forceMaintenance,
   attendanceStatusEnabled: true,
   isAttending: true,
+  attendanceScheduleEnabled: false,
+  attendanceSchedule: defaultAttendanceSchedule,
   deliveryEnabled: true,
   addressSearchEnabled: false,
   advancePaymentEnabled: true,
@@ -36,6 +48,7 @@ export const defaultSettings: SiteSettings = {
     canonicalPath: "/",
   },
   faqs: faqs.map((faq, index) => ({ id: `faq-${index + 1}`, ...faq })),
+  productOrder: {},
   bankDetails: {
     bank: "Banco de Chile",
     accountHolder: "Fonocopete Penquista",

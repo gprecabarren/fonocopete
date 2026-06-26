@@ -52,6 +52,7 @@ import type {
   Product,
   ProductCategory,
   SavedOrder,
+  AttendanceScheduleDay,
   SiteSettings,
 } from "@/lib/types";
 
@@ -59,6 +60,7 @@ const catalogStorageKey = "fonocopete.catalog";
 const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
 type AdminView = "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings" | "seo";
+type ProductSortMode = "manual" | "price_asc" | "price_desc";
 
 const latinAmericanPhones = [
   { code: "56", country: "Chile", flag: "🇨🇱", placeholder: "9 1234 5678" },
@@ -113,6 +115,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<CategoryId>("promociones");
   const [activeBeerFormat, setActiveBeerFormat] = useState<"all" | "latas" | "botellas">("all");
+  const [productSortMode, setProductSortMode] = useState<ProductSortMode>("manual");
   const [query, setQuery] = useState("");
   const [customer, setCustomer] = useState<CustomerDetails>(emptyCustomer);
   const [orderStatus, setOrderStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -142,6 +145,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     orderNumber: string;
     paymentMethod?: OrderPayload["paymentMethod"];
   } | null>(null);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
 
   useEffect(() => {
     if (productSource === "local") window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
@@ -150,6 +154,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   useEffect(() => {
     window.localStorage.setItem(settingsStorageKey, JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     async function boot() {
@@ -220,6 +229,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
 
   const activeZones = deliveryZones.filter((zone) => zone.active);
   const knownCategoryIds = useMemo(() => new Set(productCategories.map((category) => category.id)), [productCategories]);
+  const effectiveIsAttending = getEffectiveAttendance(settings, currentTime);
   const resolvedActiveCategory = productCategories.some((category) => category.id === activeCategory)
     ? activeCategory
     : productCategories[0]?.id || "promociones";
@@ -227,7 +237,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const activeZone = selectedZone ?? { ...initialDeliveryZones[0], id: "", name: "Selecciona zona", price: 0, eta: "" };
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
-    return products.filter((product) => {
+    const matchingProducts = products.filter((product) => {
       const hasKnownCategory = knownCategoryIds.has(product.category);
       const matchesCategory = cleanQuery ? true : product.category === resolvedActiveCategory;
       const matchesBeerFormat =
@@ -240,7 +250,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category} ${product.beerFormat ?? ""}`).includes(cleanQuery);
       return product.stock !== "hidden" && hasKnownCategory && matchesCategory && matchesBeerFormat && matchesQuery;
     });
-  }, [products, knownCategoryIds, resolvedActiveCategory, activeBeerFormat, query]);
+    return sortCatalogProducts(matchingProducts, productSortMode, settings.productOrder);
+  }, [products, knownCategoryIds, resolvedActiveCategory, activeBeerFormat, query, productSortMode, settings.productOrder]);
   const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden" && knownCategoryIds.has(product.category)).slice(0, 2);
   const visibleProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category)).length;
   const promoProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category) && product.category === "promociones").length;
@@ -611,7 +622,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
                 <ShieldCheck size={17} />
                 Solo mayores de 18 años
               </div>
-              {settings.attendanceStatusEnabled ? <BusinessStatusSign isAttending={settings.isAttending} /> : null}
+              {settings.attendanceStatusEnabled ? <BusinessStatusSign isAttending={effectiveIsAttending} /> : null}
             </div>
             <h1 className="text-4xl font-black uppercase leading-tight sm:text-6xl">Fonocopete</h1>
             <p className="mt-2 text-xl font-black uppercase text-red-500 sm:text-3xl">Concepción</p>
@@ -631,14 +642,16 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
                 value="Transferencia y Mercado Pago"
               />
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black">
+            <div className="mt-3 grid gap-2 text-xs font-black">
               <span className="text-neutral-400">También coordinamos envíos por</span>
-              <span className="inline-flex h-8 items-center gap-2 rounded-md bg-white px-3 text-neutral-950">
-                <SiUbereats size={18} className="text-[#06C167]" /> Uber Eats
-              </span>
-              <span className="inline-flex h-8 items-center rounded-md bg-[#ef3e46] px-2">
-                <img src="/pedidosya-logo-crop.png" alt="PedidosYa" className="h-6 w-[92px] object-contain" />
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex h-8 items-center gap-2 rounded-md bg-white px-3 text-neutral-950">
+                  <SiUbereats size={18} className="text-[#06C167]" /> Uber Eats
+                </span>
+                <span className="inline-flex h-8 items-center rounded-md bg-[#ef3e46] px-2">
+                  <img src="/pedidosya-logo-crop.png" alt="PedidosYa" className="h-6 w-[92px] object-contain" />
+                </span>
+              </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black">
               <span className="text-neutral-400">Aceptamos pago por</span>
@@ -664,6 +677,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
             setActiveCategory={setActiveCategory}
             activeBeerFormat={activeBeerFormat}
             setActiveBeerFormat={setActiveBeerFormat}
+            productSortMode={productSortMode}
+            setProductSortMode={setProductSortMode}
             categories={productCategories}
           />
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -722,9 +737,53 @@ function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
     whatsappNumber: whatsappDigits === "56939351855" || whatsappDigits === "56912345678"
       ? "56989351855"
       : settings.whatsappNumber || defaultSettings.whatsappNumber,
+    attendanceSchedule: settings.attendanceSchedule || defaultSettings.attendanceSchedule,
+    productOrder: settings.productOrder || defaultSettings.productOrder,
     bankDetails: { ...defaultSettings.bankDetails, ...settings.bankDetails },
     seo: { ...defaultSettings.seo, ...settings.seo },
   };
+}
+
+function minutesFromTime(value: string) {
+  const [hours = "0", minutes = "0"] = value.split(":");
+  return Number(hours) * 60 + Number(minutes);
+}
+
+function getEffectiveAttendance(settings: SiteSettings, date: Date) {
+  if (!settings.attendanceStatusEnabled) return settings.isAttending;
+  if (!settings.attendanceScheduleEnabled) return settings.isAttending;
+  const today = settings.attendanceSchedule.find((entry) => entry.day === date.getDay());
+  if (!today?.enabled) return false;
+  const now = date.getHours() * 60 + date.getMinutes();
+  const open = minutesFromTime(today.open);
+  const close = minutesFromTime(today.close);
+  if (open === close) return true;
+  if (open < close) return now >= open && now < close;
+  return now >= open || now < close;
+}
+
+function productOrderIndex(product: Product, productOrder: Record<string, string[]>) {
+  const order = productOrder[product.category] || [];
+  const index = order.indexOf(product.id);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
+function productAvailabilityRank(product: Product) {
+  if (product.stock === "hidden") return 3;
+  if (product.stock === "sold_out") return 2;
+  return 1;
+}
+
+function sortCatalogProducts(products: Product[], sortMode: ProductSortMode, productOrder: Record<string, string[]>) {
+  return [...products].sort((a, b) => {
+    const availability = productAvailabilityRank(a) - productAvailabilityRank(b);
+    if (availability) return availability;
+    if (sortMode === "price_asc") return a.price - b.price;
+    if (sortMode === "price_desc") return b.price - a.price;
+    const manual = productOrderIndex(a, productOrder) - productOrderIndex(b, productOrder);
+    if (manual) return manual;
+    return a.name.localeCompare(b.name, "es");
+  });
 }
 
 function hasStreetAndNumber(address: string) {
@@ -849,10 +908,10 @@ function SocialLinks({ settings, className = "" }: { settings: SiteSettings; cla
   const whatsappUrl = `https://wa.me/${settings.whatsappNumber.replace(/\D/g, "")}`;
   return (
     <div className={`items-center gap-1 ${className}`}>
-      <SocialIcon href={settings.instagramUrl} label="Instagram" hoverClass="hover:border-pink-500 hover:text-pink-600"><FaInstagram size={18} /></SocialIcon>
-      <SocialIcon href={settings.facebookUrl} label="Facebook" hoverClass="hover:border-blue-600 hover:text-blue-600"><FaFacebookF size={17} /></SocialIcon>
-      <SocialIcon href={`mailto:${settings.contactEmail}`} label="Correo" hoverClass="hover:border-amber-500 hover:text-amber-600"><Mail size={18} /></SocialIcon>
-      <SocialIcon href={whatsappUrl} label="WhatsApp" hoverClass="hover:border-green-500 hover:text-green-600"><FaWhatsapp size={19} /></SocialIcon>
+      <SocialIcon href={settings.instagramUrl} label="Instagram" hoverClass="hover:border-pink-500 hover:text-pink-600 active:border-pink-500 active:text-pink-600"><FaInstagram size={18} /></SocialIcon>
+      <SocialIcon href={settings.facebookUrl} label="Facebook" hoverClass="hover:border-blue-600 hover:text-blue-600 active:border-blue-600 active:text-blue-600"><FaFacebookF size={17} /></SocialIcon>
+      <SocialIcon href={`mailto:${settings.contactEmail}`} label="Correo" hoverClass="hover:border-amber-500 hover:text-amber-600 active:border-amber-500 active:text-amber-600"><Mail size={18} /></SocialIcon>
+      <SocialIcon href={whatsappUrl} label="WhatsApp" hoverClass="hover:border-green-500 hover:text-green-600 active:border-green-500 active:text-green-600"><FaWhatsapp size={19} /></SocialIcon>
     </div>
   );
 }
@@ -918,6 +977,8 @@ function CatalogToolbar(props: {
   setActiveCategory: (value: CategoryId) => void;
   activeBeerFormat: "all" | "latas" | "botellas";
   setActiveBeerFormat: (value: "all" | "latas" | "botellas") => void;
+  productSortMode: ProductSortMode;
+  setProductSortMode: (value: ProductSortMode) => void;
   categories: ProductCategory[];
 }) {
   return (
@@ -952,7 +1013,7 @@ function CatalogToolbar(props: {
         ))}
       </div>
       {props.activeCategory === "cervezas" ? (
-        <div className="mb-5 flex gap-2">
+        <div className="mb-5 flex flex-wrap gap-2">
           {([
             ["all", "Todas"],
             ["latas", "Latas"],
@@ -971,6 +1032,24 @@ function CatalogToolbar(props: {
           ))}
         </div>
       ) : null}
+      <div className="mb-5 flex flex-wrap gap-2">
+        {([
+          ["manual", "Orden tienda"],
+          ["price_asc", "Menor precio"],
+          ["price_desc", "Mayor precio"],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => props.setProductSortMode(value)}
+            className={`h-9 rounded-lg px-3 text-xs font-black uppercase ${
+              props.productSortMode === value ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
     </>
   );
 }
@@ -1604,7 +1683,7 @@ function AdminPanel(props: {
           <FaqAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} />
         ) : props.adminView === "settings" ? (
           <SettingsAdmin
-            key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}-${props.settings.attendanceStatusEnabled}-${props.settings.isAttending}`}
+            key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}-${props.settings.attendanceStatusEnabled}-${props.settings.isAttending}-${props.settings.attendanceScheduleEnabled}`}
             settings={props.settings}
             onSaveSettings={props.onSaveSettings}
             syncStatus={props.syncStatus}
@@ -2016,12 +2095,16 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
   const categoryIds = useMemo(() => new Set(props.categories.map((category) => category.id)), [props.categories]);
   const uncategorizedProducts = props.products.filter((product) => !categoryIds.has(product.category));
+  const orderableProductsInView =
+    productView !== "__latest" && productView !== "__uncategorized"
+      ? sortCatalogProducts(props.products.filter((product) => product.category === productView && product.stock !== "hidden" && product.stock !== "sold_out"), "manual", props.settings.productOrder)
+      : [];
   const baseAdminProducts =
     productView === "__latest"
       ? props.products.slice(0, 5)
       : productView === "__uncategorized"
         ? uncategorizedProducts
-        : props.products.filter((product) => product.category === productView);
+        : sortCatalogProducts(props.products.filter((product) => product.category === productView), "manual", props.settings.productOrder);
   const cleanAdminProductQuery = normalizeText(adminProductQuery);
   const visibleAdminProducts = cleanAdminProductQuery
     ? props.products.filter((product) =>
@@ -2029,10 +2112,27 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
       )
     : baseAdminProducts;
 
+  async function moveProductInCategory(productId: string, direction: -1 | 1) {
+    if (productView === "__latest" || productView === "__uncategorized") return;
+    const ids = orderableProductsInView.map((product) => product.id);
+    const index = ids.indexOf(productId);
+    const nextIndex = index + direction;
+    if (index === -1 || nextIndex < 0 || nextIndex >= ids.length) return;
+    const nextIds = [...ids];
+    [nextIds[index], nextIds[nextIndex]] = [nextIds[nextIndex], nextIds[index]];
+    await props.onSaveSettings({
+      ...props.settings,
+      productOrder: {
+        ...props.settings.productOrder,
+        [productView]: nextIds,
+      },
+    });
+  }
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-      <div className="grid gap-4">
-        <form onSubmit={props.onSubmit} className="rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+    <div className="grid min-w-0 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid min-w-0 gap-4">
+        <form onSubmit={props.onSubmit} className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
           <h3 className="mb-4 flex items-center gap-2 text-lg font-black">
             <Plus size={18} />
             Nuevo producto
@@ -2052,7 +2152,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             <Input label="Volumen" placeholder="Ej: 750 ml, 1 L, 40°" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
             <div className="grid gap-2">
               <span className="text-sm font-bold">Imagen del producto</span>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid min-w-0 grid-cols-2 gap-2">
                 <SegmentButton active={imageMode === "upload"} onClick={() => setImageMode("upload")}>Subir imagen</SegmentButton>
                 <SegmentButton active={imageMode === "url"} onClick={() => setImageMode("url")}>Foto URL</SegmentButton>
               </div>
@@ -2082,7 +2182,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
         </div>
       </div>
       <div className="grid content-start gap-4">
-        <div className="rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
           <div className="mb-3">
             <h3 className="text-lg font-black">Productos subidos</h3>
             <p className="text-sm font-semibold text-neutral-600">Edita por categoría o revisa los últimos productos agregados.</p>
@@ -2121,6 +2221,12 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               products={props.products}
               categories={props.categories}
               categoryIds={categoryIds}
+              orderControls={!cleanAdminProductQuery && productView !== "__latest" && productView !== "__uncategorized" && product.stock !== "hidden" && product.stock !== "sold_out" ? {
+                canMoveUp: orderableProductsInView.findIndex((item) => item.id === product.id) > 0,
+                canMoveDown: orderableProductsInView.findIndex((item) => item.id === product.id) !== -1 && orderableProductsInView.findIndex((item) => item.id === product.id) < orderableProductsInView.length - 1,
+                onMoveUp: () => void moveProductInCategory(product.id, -1),
+                onMoveDown: () => void moveProductInCategory(product.id, 1),
+              } : undefined}
               updateProduct={props.updateProduct}
               onSaveProduct={props.onSaveProduct}
               onDeleteProduct={props.onDeleteProduct}
@@ -2141,6 +2247,7 @@ function ProductAdminCard({
   products,
   categories,
   categoryIds,
+  orderControls,
   updateProduct,
   onSaveProduct,
   onDeleteProduct,
@@ -2149,6 +2256,12 @@ function ProductAdminCard({
   products: Product[];
   categories: ProductCategory[];
   categoryIds: Set<string>;
+  orderControls?: {
+    canMoveUp: boolean;
+    canMoveDown: boolean;
+    onMoveUp: () => void;
+    onMoveDown: () => void;
+  };
   updateProduct: (productId: string, updater: (product: Product) => Product) => void;
   onSaveProduct: (product: Product) => Promise<void>;
   onDeleteProduct: (productId: string) => Promise<void>;
@@ -2192,6 +2305,19 @@ function ProductAdminCard({
         <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-black text-red-800">
           Producto sin categoría: no se muestra al cliente hasta asignarle una categoría.
         </p>
+      ) : null}
+      {orderControls ? (
+        <div className="mb-3 flex flex-col gap-2 rounded-lg bg-neutral-50 p-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs font-bold text-neutral-600">Orden dentro de la categoría</p>
+          <div className="grid grid-cols-2 gap-2 sm:w-24">
+            <button type="button" disabled={!orderControls.canMoveUp} onClick={orderControls.onMoveUp} className="action-button grid h-9 place-items-center rounded-lg border border-neutral-300 bg-white disabled:cursor-not-allowed disabled:opacity-35" title="Subir">
+              <ArrowUp size={17} />
+            </button>
+            <button type="button" disabled={!orderControls.canMoveDown} onClick={orderControls.onMoveDown} className="action-button grid h-9 place-items-center rounded-lg border border-neutral-300 bg-white disabled:cursor-not-allowed disabled:opacity-35" title="Bajar">
+              <ArrowDown size={17} />
+            </button>
+          </div>
+        </div>
       ) : null}
       <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_170px]">
         <img src={product.imageUrl} alt="" className="h-24 w-full rounded-lg object-cover md:h-full" />
@@ -2664,6 +2790,34 @@ function SettingsAdmin({
           disabled={!draft.attendanceStatusEnabled}
         />
         <BooleanControl
+          label="Horario automático del letrero"
+          value={draft.attendanceScheduleEnabled}
+          onChange={(attendanceScheduleEnabled) => setDraft({ ...draft, attendanceScheduleEnabled })}
+          activeLabel="Activar"
+          inactiveLabel="Manual"
+          activeTone="success"
+          disabled={!draft.attendanceStatusEnabled}
+        />
+        {draft.attendanceStatusEnabled && draft.attendanceScheduleEnabled ? (
+          <div className="grid gap-2 rounded-lg border border-neutral-200 bg-white p-3 lg:col-span-2">
+            <p className="text-sm font-black">Horario semanal</p>
+            <div className="grid gap-2">
+              {draft.attendanceSchedule.map((entry) => (
+                <AttendanceScheduleRow
+                  key={entry.day}
+                  entry={entry}
+                  onChange={(nextEntry) =>
+                    setDraft({
+                      ...draft,
+                      attendanceSchedule: draft.attendanceSchedule.map((item) => item.day === entry.day ? nextEntry : item),
+                    })
+                  }
+                />
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <BooleanControl
           label="Cálculo y cobro de despacho"
           value={draft.deliveryEnabled}
           onChange={(deliveryEnabled) => setDraft({ ...draft, deliveryEnabled, addressSearchEnabled: deliveryEnabled ? draft.addressSearchEnabled : false })}
@@ -2736,6 +2890,39 @@ function SettingsSection({ title, description, children }: { title: string; desc
         {children}
       </div>
     </section>
+  );
+}
+
+const weekDayLabels: Record<number, string> = {
+  0: "Domingo",
+  1: "Lunes",
+  2: "Martes",
+  3: "Miércoles",
+  4: "Jueves",
+  5: "Viernes",
+  6: "Sábado",
+};
+
+function AttendanceScheduleRow({ entry, onChange }: { entry: AttendanceScheduleDay; onChange: (entry: AttendanceScheduleDay) => void }) {
+  return (
+    <div className="grid gap-2 rounded-lg bg-neutral-50 p-2 sm:grid-cols-[120px_1fr_1fr_120px] sm:items-center">
+      <span className="text-sm font-black">{weekDayLabels[entry.day]}</span>
+      <label className="grid gap-1 text-xs font-bold text-neutral-600">
+        Abre
+        <input type="time" value={entry.open} disabled={!entry.enabled} onChange={(event) => onChange({ ...entry, open: event.target.value })} className="h-10 rounded-lg border border-neutral-300 bg-white px-2 font-bold disabled:bg-neutral-100" />
+      </label>
+      <label className="grid gap-1 text-xs font-bold text-neutral-600">
+        Cierra
+        <input type="time" value={entry.close} disabled={!entry.enabled} onChange={(event) => onChange({ ...entry, close: event.target.value })} className="h-10 rounded-lg border border-neutral-300 bg-white px-2 font-bold disabled:bg-neutral-100" />
+      </label>
+      <button
+        type="button"
+        onClick={() => onChange({ ...entry, enabled: !entry.enabled })}
+        className={`action-button h-10 rounded-lg text-sm font-black ${entry.enabled ? "bg-green-600 text-white" : "bg-neutral-200 text-neutral-600"}`}
+      >
+        {entry.enabled ? "Activo" : "Cerrado"}
+      </button>
+    </div>
   );
 }
 
@@ -3136,11 +3323,11 @@ function ImagePicker({ label, onImage }: { label: string; onImage: (imageUrl: st
   }
 
   return (
-    <label className="grid gap-1 text-sm font-bold">
+    <label className="grid min-w-0 gap-1 text-sm font-bold">
       {label}
-      <span className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-neutral-400 bg-white px-3 text-sm font-black text-neutral-700">
-        <Upload size={17} />
-        Seleccionar archivo
+      <span className="flex min-h-11 w-full min-w-0 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg border border-dashed border-neutral-400 bg-white px-3 text-sm font-black text-neutral-700">
+        <Upload size={17} className="shrink-0" />
+        <span className="min-w-0 truncate">Seleccionar archivo</span>
         <input
           type="file"
           accept="image/*"
@@ -3219,7 +3406,7 @@ function OrderTotals({
 
 function SegmentButton({ active, onClick, children, disabled = false }: { active: boolean; onClick: () => void; children: React.ReactNode; disabled?: boolean }) {
   return (
-    <button type="button" disabled={disabled} onClick={onClick} className={`h-10 rounded-lg px-4 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${active ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"}`}>
+    <button type="button" disabled={disabled} onClick={onClick} className={`h-10 min-w-0 truncate rounded-lg px-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-45 sm:px-4 ${active ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"}`}>
       {children}
     </button>
   );
