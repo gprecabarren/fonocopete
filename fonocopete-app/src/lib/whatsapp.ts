@@ -57,7 +57,7 @@ export function buildWhatsAppMessage(order: OrderPayload, purpose: "order" | "me
     `Direccion: ${order.customer.address}`,
     order.zoneName ? `Zona: ${order.zoneName}` : "",
     order.customer.notes ? `Notas: ${order.customer.notes}` : "",
-    `Direccion completa: "${order.customer.address}","${order.zoneName}"`,
+    `Direccion completa: ${order.customer.address}, ${order.zoneName}`,
     ...(purpose === "transfer" ? bankLines : []),
     purpose === "mercadopago" ? `Link de pago: ${order.paymentLink}` : "",
     purpose === "transfer" ? "*Y adjunto el comprobante de compra aqui.*" : "",
