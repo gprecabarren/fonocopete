@@ -591,7 +591,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       <Header settings={settings} cartCount={cartCount} />
       <FloatingWhatsApp whatsappNumber={settings.whatsappNumber} />
 
-      <section id="promociones" className="scroll-mt-20 bg-neutral-950 text-white">
+      <section id="promociones" className="scroll-mt-20 bg-neutral-950 pt-[116px] text-white lg:pt-0">
         <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_0.78fr] lg:py-12">
           <div className="flex min-w-0 flex-col justify-center">
             <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
@@ -640,7 +640,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         </div>
       </section>
 
-      <section id="catalogo" className="mx-auto grid max-w-7xl gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_390px]">
+      <section id="catalogo" className="mx-auto grid max-w-7xl scroll-mt-[128px] gap-6 px-4 py-8 sm:px-6 lg:grid-cols-[minmax(0,1fr)_390px] lg:scroll-mt-24">
         <div className="min-w-0">
           <CatalogToolbar
             query={query}
@@ -754,7 +754,7 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
   ];
 
   return (
-    <header className="sticky top-0 z-50 border-b border-neutral-200/80 bg-[#f7f4ef]/95 backdrop-blur supports-[backdrop-filter]:bg-[#f7f4ef]/85">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-neutral-200/80 bg-[#f7f4ef]/95 backdrop-blur supports-[backdrop-filter]:bg-[#f7f4ef]/85 lg:sticky lg:top-0">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-2">
           <button
@@ -792,7 +792,7 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
         </div>
       </div>
       {menuOpen ? (
-        <nav className="absolute left-4 top-[72px] w-[min(330px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-neutral-200 bg-white p-2 shadow-2xl sm:left-6">
+        <nav className="absolute left-4 top-[116px] w-[min(330px,calc(100vw-2rem))] overflow-hidden rounded-lg border border-neutral-200 bg-white p-2 shadow-2xl sm:left-6 lg:top-[72px]">
           {links.map((link) => (
             <a
               key={link.href}
@@ -1070,7 +1070,7 @@ function CheckoutPanel(props: {
   }
 
   return (
-    <aside id="checkout" className="min-w-0 lg:sticky lg:top-24 lg:self-start">
+    <aside id="checkout" className="min-w-0 scroll-mt-[128px] lg:sticky lg:top-24 lg:self-start lg:scroll-mt-24">
       <form onSubmit={props.onSubmit} className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-xl font-black">
