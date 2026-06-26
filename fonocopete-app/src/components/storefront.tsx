@@ -1352,7 +1352,7 @@ function PaymentDialog(props: {
             ) : null}
           </section>
           <section className={`rounded-lg border p-4 ${!props.settings.advancePaymentEnabled || lockedMethod === "cash_on_delivery" ? "border-neutral-200 bg-neutral-50 opacity-60" : "border-neutral-200"}`}>
-            <h3 className="text-lg font-black">Pago anticipado <span className="text-xs text-red-600">(Beta)</span></h3>
+            <h3 className="text-lg font-black">Pago anticipado <span className="text-xs font-semibold text-red-700">(Beta)</span></h3>
             <p className="mt-2 text-sm leading-6 text-neutral-600">Paga antes del despacho mediante Mercado Pago o transferencia bancaria.</p>
             {!props.settings.advancePaymentEnabled ? (
               <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-black text-amber-900">Pago anticipado desactivado desde ajustes.</p>
@@ -1891,12 +1891,19 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
 
 function FaqAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSaveSettings: (settings: SiteSettings) => Promise<void> }) {
   const [items, setItems] = useState<FaqItem[]>(settings.faqs);
+  function moveFaq(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= items.length) return;
+    const nextItems = [...items];
+    [nextItems[index], nextItems[nextIndex]] = [nextItems[nextIndex], nextItems[index]];
+    setItems(nextItems);
+  }
 
   return (
     <div className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
       <div className="flex flex-col gap-3 rounded-lg bg-neutral-950 p-4 text-white sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-black uppercase tracking-[0.18em] text-red-400">Contenido del sitio</p>
+          <p className="text-sm font-extrabold text-red-300">Contenido del sitio</p>
           <h3 className="mt-1 text-xl font-black">Preguntas frecuentes</h3>
           <p className="mt-1 text-sm font-semibold text-neutral-300">Edita las dudas que verán los clientes antes de comprar.</p>
         </div>
@@ -1909,13 +1916,35 @@ function FaqAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSave
           Agregar pregunta
         </button>
       </div>
-      {items.map((faq) => (
+      {items.map((faq, index) => (
         <div key={faq.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center gap-2 border-b border-neutral-100 pb-3">
-            <span className="grid size-8 place-items-center rounded-lg bg-red-50 text-sm font-black text-red-700">
-              {items.indexOf(faq) + 1}
-            </span>
-            <p className="text-sm font-black uppercase tracking-wide text-neutral-500">Pregunta frecuente</p>
+          <div className="flex flex-col gap-3 border-b border-neutral-100 pb-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-lg bg-red-50 text-sm font-black text-red-700">
+                {index + 1}
+              </span>
+              <p className="text-sm font-black text-neutral-600">Pregunta frecuente</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:w-28">
+              <button
+                type="button"
+                disabled={index === 0}
+                onClick={() => moveFaq(index, -1)}
+                className="action-button grid h-9 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-700 disabled:cursor-not-allowed disabled:opacity-35"
+                title="Subir"
+              >
+                <ArrowUp size={17} />
+              </button>
+              <button
+                type="button"
+                disabled={index === items.length - 1}
+                onClick={() => moveFaq(index, 1)}
+                className="action-button grid h-9 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-700 disabled:cursor-not-allowed disabled:opacity-35"
+                title="Bajar"
+              >
+                <ArrowDown size={17} />
+              </button>
+            </div>
           </div>
           <Input label="Pregunta" value={faq.question} onChange={(question) => setItems(items.map((item) => item.id === faq.id ? { ...item, question } : item))} />
           <Textarea label="Respuesta" value={faq.answer} onChange={(answer) => setItems(items.map((item) => item.id === faq.id ? { ...item, answer } : item))} />
@@ -2349,7 +2378,7 @@ function SettingsAdmin({
         <SocialHandleInput label="Facebook" prefix="facebook.com/" domain="facebook.com" value={draft.facebookUrl} onChange={(facebookUrl) => setDraft({ ...draft, facebookUrl })} />
         <Input label="Link Mercado Pago" value={draft.mercadoPagoLink} onChange={(value) => setDraft({ ...draft, mercadoPagoLink: value })} />
       </SettingsSection>
-      <SettingsSection title="Operación del sitio" description="Activa o pausa funciones principales sin tocar el catálogo.">
+      <SettingsSection title="Operación del sitio" description="Activa o pausa funciones principales de la tienda.">
         <BooleanControl
           label="Modo mantenimiento"
           value={draft.maintenanceMode}
@@ -2408,7 +2437,7 @@ function SettingsAdmin({
           Si desactivas el cálculo de despacho, igualmente se solicitarán dirección, ciudad y zona, pero el costo será $0 y no se mostrará al cliente.
         </p>
       </SettingsSection>
-      <SettingsSection title="Mensajes automáticos" description="Textos que aparecen cuando el sitio está cerrado o al preparar mensajes.">
+      <SettingsSection title="Mensajes y avisos" description="Configura textos visibles para clientes y mensajes preparados de la tienda.">
         <div className="lg:col-span-2">
           <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
         </div>
@@ -2442,7 +2471,7 @@ function SettingsSection({ title, description, children }: { title: string; desc
   return (
     <section className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 shadow-sm">
       <div className="rounded-lg bg-white p-4">
-        <p className="text-xs font-black uppercase tracking-[0.16em] text-red-600">{title}</p>
+        <p className="text-sm font-extrabold text-red-700">{title}</p>
         <p className="mt-1 text-sm font-semibold text-neutral-600">{description}</p>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
@@ -2512,6 +2541,15 @@ function SaveSettingsButton({
   );
 }
 
+function ControlLabel({ label }: { label: string }) {
+  if (!label.includes("(Beta)")) return <>{label}</>;
+  return (
+    <>
+      {label.replace(" (Beta)", "")} <span className="text-xs font-semibold text-red-700">(Beta)</span>
+    </>
+  );
+}
+
 function BooleanControl({
   label,
   value,
@@ -2535,7 +2573,7 @@ function BooleanControl({
   const inactiveClass = inactiveTone === "danger" ? "bg-red-600 text-white" : "bg-neutral-950 text-white";
   return (
     <fieldset className="rounded-lg border border-neutral-200 bg-white p-3">
-      <legend className="px-1 text-sm font-black">{label}</legend>
+      <legend className="px-1 text-sm font-black"><ControlLabel label={label} /></legend>
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
