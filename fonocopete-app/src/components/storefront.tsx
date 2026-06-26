@@ -12,6 +12,7 @@ import {
   Bike,
   Check,
   ClipboardList,
+  Copy,
   CreditCard,
   Eye,
   EyeOff,
@@ -334,6 +335,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo válido.";
     if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 dígitos en el teléfono.";
     if (!hasStreetAndNumber(customer.address)) return "Ingresa calle y número en la dirección.";
+    if (!hasOnlyAddressCharacters(customer.address)) return "La dirección tiene caracteres no permitidos.";
     if (!customer.zoneId) return "Selecciona una zona de despacho / ciudad.";
     return "";
   }
@@ -625,7 +627,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
                 <SiUbereats size={18} className="text-[#06C167]" /> Uber Eats
               </span>
               <span className="inline-flex h-8 items-center rounded-md bg-[#ef3e46] px-2">
-                <img src="/pedidosya-logo.png" alt="PedidosYa" className="h-6 w-[104px] object-contain" />
+                <img src="/pedidosya-logo-crop.png" alt="PedidosYa" className="h-6 w-[92px] object-contain" />
               </span>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs font-black">
@@ -717,6 +719,14 @@ function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
 
 function hasStreetAndNumber(address: string) {
   return /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(address) && /\d/.test(address);
+}
+
+function sanitizeAddressValue(value: string) {
+  return value.replace(/[^0-9A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s.,°ºª\-/'"]/g, "");
+}
+
+function hasOnlyAddressCharacters(address: string) {
+  return sanitizeAddressValue(address) === address;
 }
 
 function resizeImage(file: File) {
@@ -1177,7 +1187,7 @@ function CheckoutPanel(props: {
                 <div className="flex gap-2">
                   <input
                     value={props.customer.address}
-                    onChange={(event) => props.onCustomer("address", event.target.value)}
+                    onChange={(event) => props.onCustomer("address", sanitizeAddressValue(event.target.value))}
                     className="h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 font-medium"
                     placeholder={manualMode ? "Calle y número" : "Busca tu calle y número"}
                     required
@@ -1293,7 +1303,7 @@ function PaymentDialog(props: {
               Paga cuando recibas tu pedido. La confirmación manual puede aumentar ligeramente el tiempo de entrega.
             </p>
             <div className="mt-4 min-w-0 rounded-lg bg-neutral-50 p-3">
-              <p className="mb-2 text-sm font-black">Datos disponibles si prefieres transferir al recibir:</p>
+              <p className="mb-2 text-sm font-black">Datos disponibles si prefieres transferir desde antes:</p>
               <BankDetails settings={props.settings} />
             </div>
             <button
@@ -1303,7 +1313,7 @@ function PaymentDialog(props: {
               className="action-button mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Check size={18} />
-              Confirmar pago y registrar pedido
+              Confirmar compra y registrar pedido
             </button>
             <button
               type="button"
@@ -1312,7 +1322,7 @@ function PaymentDialog(props: {
               className="action-button mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-green-600 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
             >
               <FaWhatsapp size={19} />
-              Registrar y confirmar por WhatsApp
+              Confirmar y coordinar entrega por WhatsApp
             </button>
             {lockedMethod === "cash_on_delivery" && !whatsappSent ? (
               <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs font-black text-amber-900">Obligatorio: ahora presiona WhatsApp para enviar el comprobante o coordinar con el encargado del despacho.</p>
@@ -1366,16 +1376,68 @@ function PaymentDialog(props: {
   );
 }
 
+function formatBankDetailsForTransfer(bank: SiteSettings["bankDetails"]) {
+  return [
+    bank.accountHolder,
+    bank.accountType,
+    `RUT: ${bank.rut}`,
+    bank.bank,
+    bank.accountNumber,
+    bank.email,
+  ].join("\n");
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
 function BankDetails({ settings }: { settings: SiteSettings }) {
   const bank = settings.bankDetails;
+  const [copied, setCopied] = useState(false);
+
+  async function copyBankDetails() {
+    await copyTextToClipboard(formatBankDetailsForTransfer(bank));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  }
+
   return (
-    <dl className="grid gap-2 text-sm">
-      <Detail label="Banco" value={bank.bank} />
-      <Detail label="Titular" value={bank.accountHolder} />
-      <Detail label={bank.accountType} value={bank.accountNumber} />
-      <Detail label="RUT" value={bank.rut} />
-      <Detail label="Correo" value={bank.email} />
-    </dl>
+    <div className="relative grid gap-3">
+      <dl className="grid gap-2 text-sm">
+        <Detail label="Banco" value={bank.bank} />
+        <Detail label="Titular" value={bank.accountHolder} />
+        <Detail label={bank.accountType} value={bank.accountNumber} />
+        <Detail label="RUT" value={bank.rut} />
+        <Detail label="Correo" value={bank.email} />
+      </dl>
+      <button
+        type="button"
+        onClick={() => void copyBankDetails()}
+        className={`action-button flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm font-black transition ${
+          copied ? "bg-green-600 text-white" : "border border-neutral-300 bg-white text-neutral-800"
+        }`}
+      >
+        {copied ? <Check size={18} /> : <Copy size={18} />}
+        {copied ? "Datos copiados" : "Copiar datos bancarios"}
+      </button>
+      {copied ? (
+        <div className="fixed bottom-5 left-1/2 z-[90] -translate-x-1/2 rounded-lg bg-neutral-950 px-4 py-3 text-sm font-black text-white shadow-2xl">
+          Datos copiados
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1553,6 +1615,14 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
       }),
     [orders, dateMode, dateFilter, paymentFilter, fulfillmentFilter, searchMode, searchValue],
   );
+  const orderYears = useMemo(() => {
+    const years = new Set<number>([new Date().getFullYear()]);
+    orders.forEach((order) => {
+      const year = new Date(order.createdAt).getFullYear();
+      if (!Number.isNaN(year)) years.add(year);
+    });
+    return Array.from(years).sort((a, b) => b - a);
+  }, [orders]);
 
   async function updateOrder(order: SavedOrder, field: "paymentStatus" | "fulfillmentStatus", value: string) {
     const response = await fetch(`/api/orders/${order.id}`, {
@@ -1612,14 +1682,27 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
             </label>
             <label className="grid gap-1 text-sm font-bold">
               Valor fecha
-              <input
-                type={dateMode === "year" ? "number" : dateMode === "month" ? "month" : "date"}
-                min={dateMode === "year" ? "2024" : undefined}
-                max={dateMode === "year" ? "2100" : undefined}
-                value={dateFilter}
-                onChange={(event) => setDateFilter(event.target.value)}
-                className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium"
-              />
+              {dateMode === "year" ? (
+                <select
+                  value={dateFilter}
+                  onChange={(event) => setDateFilter(event.target.value)}
+                  className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium"
+                >
+                  <option value="">Todos los años</option>
+                  {orderYears.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={dateMode === "month" ? "month" : "date"}
+                  value={dateFilter}
+                  onChange={(event) => setDateFilter(event.target.value)}
+                  className="h-11 rounded-lg border border-neutral-300 bg-white px-3 font-medium"
+                />
+              )}
             </label>
             <label className="grid gap-1 text-sm font-bold">
               Estado pago
