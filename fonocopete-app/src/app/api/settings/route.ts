@@ -8,8 +8,15 @@ import type { SiteSettings } from "@/lib/types";
 let demoSettings: SiteSettings = defaultSettings;
 
 function withRuntimeOverrides(settings: SiteSettings) {
+  const whatsappDigits = settings.whatsappNumber.replace(/\D/g, "");
   return {
+    ...defaultSettings,
     ...settings,
+    bankDetails: { ...defaultSettings.bankDetails, ...settings.bankDetails },
+    seo: { ...defaultSettings.seo, ...settings.seo },
+    whatsappNumber: ["56939351855", "56912345678"].includes(whatsappDigits)
+      ? "56989351855"
+      : settings.whatsappNumber,
     maintenanceMode:
       process.env.FORCE_MAINTENANCE === "true" ||
       process.env.NEXT_PUBLIC_FORCE_MAINTENANCE === "true" ||
@@ -21,12 +28,26 @@ const settingsSchema = z.object({
   businessName: z.string().min(1),
   maintenanceMode: z.boolean(),
   deliveryEnabled: z.boolean(),
+  addressSearchEnabled: z.boolean(),
+  advancePaymentEnabled: z.boolean(),
   maintenanceMessage: z.string().min(1),
   whatsappNumber: z.string().min(5),
   contactEmail: z.email(),
   instagramUrl: z.url(),
   facebookUrl: z.url(),
   mercadoPagoLink: z.string().min(1),
+  whatsappMessageIntro: z.string(),
+  seo: z.object({
+    title: z.string().min(1),
+    titleTemplate: z.string().min(1),
+    description: z.string().min(1),
+    keywords: z.string(),
+    ogTitle: z.string().min(1),
+    ogDescription: z.string().min(1),
+    twitterTitle: z.string().min(1),
+    twitterDescription: z.string().min(1),
+    canonicalPath: z.string().min(1),
+  }),
   faqs: z.array(z.object({
     id: z.string().min(1),
     question: z.string().min(1),

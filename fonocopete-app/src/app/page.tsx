@@ -8,7 +8,7 @@ export default function Home() {
     name: "Fonocopete Concepción",
     url: siteUrl,
     email: "fonocopeteconcepcion.maverik@gmail.com",
-    telephone: "+56 9 3935 1855",
+    telephone: "+56 9 8935 1855",
     image: `${siteUrl}/opengraph-image`,
     areaServed: ["Concepción", "San Pedro de la Paz", "Talcahuano", "Coronel"],
     sameAs: [

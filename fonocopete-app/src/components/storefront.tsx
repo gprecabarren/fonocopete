@@ -107,7 +107,7 @@ const productDraft: Product = {
 export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [products, setProducts] = useState<Product[]>(() => readLocal(catalogStorageKey, initialProducts));
   const [productCategories, setProductCategories] = useState<ProductCategory[]>(categories);
-  const [settings, setSettings] = useState<SiteSettings>(() => readLocal(settingsStorageKey, defaultSettings));
+  const [settings, setSettings] = useState<SiteSettings>(() => mergeSettings(readLocal(settingsStorageKey, defaultSettings)));
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<CategoryId>("promociones");
   const [activeBeerFormat, setActiveBeerFormat] = useState<"all" | "latas" | "botellas">("all");
@@ -135,7 +135,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     location: { lat: number; lng: number };
   }>>([]);
   const [orders, setOrders] = useState<SavedOrder[]>([]);
-  const [registeredOrder, setRegisteredOrder] = useState<{ id: string; orderNumber: string } | null>(null);
+  const [registeredOrder, setRegisteredOrder] = useState<{
+    id: string;
+    orderNumber: string;
+    paymentMethod?: OrderPayload["paymentMethod"];
+  } | null>(null);
 
   useEffect(() => {
     if (productSource === "local") window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
@@ -167,7 +171,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         const data = (await settingsResponse.value.json()) as { settings: SiteSettings; source: "demo" | "supabase" };
         const hasLocalSettings = typeof window !== "undefined" && Boolean(window.localStorage.getItem(settingsStorageKey));
         if (data.source === "supabase" || !hasLocalSettings) {
-          setSettings({ ...defaultSettings, ...data.settings });
+          setSettings(mergeSettings(data.settings));
         }
       }
 
@@ -320,19 +324,19 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   function validateCheckout() {
-    if (settings.maintenanceMode) return "El sitio esta en mantenimiento.";
+    if (settings.maintenanceMode) return "El sitio está en mantenimiento.";
     if (!cartLines.length) return "Agrega al menos un producto disponible.";
     if (!customer.name.trim()) return "Ingresa tu nombre.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo válido.";
     if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 dígitos en el teléfono.";
     if (customer.address.trim().length < 3) return "Ingresa tu dirección.";
-    if ((!settings.deliveryEnabled || customer.manualAddress) && !customer.zoneId) return "Selecciona una zona de despacho.";
+    if ((!settings.deliveryEnabled || !settings.addressSearchEnabled || customer.manualAddress) && !customer.zoneId) return "Selecciona una zona de despacho.";
     return "";
   }
 
   function buildOrder(paymentMethod: OrderPayload["paymentMethod"]): OrderPayload {
     return {
-      customer: settings.deliveryEnabled ? customer : { ...customer, manualAddress: true },
+      customer: settings.deliveryEnabled && settings.addressSearchEnabled ? customer : { ...customer, manualAddress: true },
       items: cartLines.map((item) => ({
         name: item.product.name,
         quantity: item.quantity,
@@ -349,6 +353,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         : `${activeZone.name} - sin cobro`,
       paymentLink: settings.mercadoPagoLink,
       paymentMethod,
+      bankDetails: settings.bankDetails,
+      whatsappMessageIntro: settings.whatsappMessageIntro,
     };
   }
 
@@ -363,11 +369,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     paymentMethod: OrderPayload["paymentMethod"],
     purpose: "order" | "mercadopago" | "transfer",
     notifyWhatsApp: boolean,
-  ) {
+  ): Promise<boolean> {
     const error = validateCheckout();
     if (error) {
       setCheckoutError(error);
-      return;
+      return false;
     }
 
     setOrderStatus("sending");
@@ -375,6 +381,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     const order = buildOrder(paymentMethod);
     try {
       let saved = registeredOrder;
+      if (saved?.paymentMethod && saved.paymentMethod !== paymentMethod) {
+        setOrderStatus("sent");
+        whatsappWindow?.close();
+        return false;
+      }
       if (!saved) {
         const response = await fetch("/api/orders", {
           method: "POST",
@@ -383,7 +394,10 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         });
         if (!response.ok) throw new Error("No se pudo registrar el pedido");
         const data = (await response.json()) as { orderId: string; orderNumber: string };
-        saved = { id: data.orderId, orderNumber: data.orderNumber };
+        saved = { id: data.orderId, orderNumber: data.orderNumber, paymentMethod };
+        setRegisteredOrder(saved);
+      } else if (!saved.paymentMethod) {
+        saved = { ...saved, paymentMethod };
         setRegisteredOrder(saved);
       }
       order.orderNumber = saved.orderNumber;
@@ -394,9 +408,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       }
       setOrderStatus("sent");
       void loadOrders();
+      return true;
     } catch {
       whatsappWindow?.close();
       setOrderStatus("error");
+      return false;
     }
   }
 
@@ -495,7 +511,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   async function saveSettings(nextSettings: SiteSettings) {
-    setSettings(nextSettings);
+    setSettings(mergeSettings(nextSettings));
     setSyncStatus("syncing");
     try {
       const response = await fetch("/api/settings", {
@@ -564,7 +580,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           onClose={() => setShowPayment(false)}
           onOpenMercadoPago={() => window.open(settings.mercadoPagoLink, "_blank", "noopener,noreferrer")}
           onRegister={(paymentMethod, purpose, notifyWhatsApp) =>
-            void completeOrder(paymentMethod, purpose, notifyWhatsApp)
+            completeOrder(paymentMethod, purpose, notifyWhatsApp)
           }
         />
       ) : null}
@@ -575,16 +591,12 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       <section id="promociones" className="scroll-mt-20 bg-neutral-950 text-white">
         <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_0.78fr] lg:py-12">
           <div className="flex min-w-0 flex-col justify-center">
-            <img
-              src="/fonocopete-logo-horizontal.jpg"
-              alt="Fonocopete Maverik"
-              className="mb-5 h-auto w-full max-w-md rounded-lg bg-white object-contain p-2 sm:max-w-lg"
-            />
             <div className="mb-5 inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
               <ShieldCheck size={17} />
               Solo mayores de 18 años
             </div>
-            <h1 className="sr-only">{settings.businessName}</h1>
+            <h1 className="text-4xl font-black uppercase leading-tight sm:text-6xl">Fonocopete</h1>
+            <p className="mt-2 text-xl font-black uppercase text-red-500 sm:text-3xl">Concepción</p>
             <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-300 sm:text-lg">
               Catálogo vivo, carrito simple y confirmación por WhatsApp para comprar sin pedir PDF.
             </p>
@@ -596,7 +608,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
                 value={activeZones.length ? activeZones.map((zone) => zone.name).join(" · ") : "Por coordinar"}
               />
               <Metric
-                icon={<SiMercadopago size={22} className="text-sky-300" />}
+                icon={<CreditCard size={20} />}
                 label="Medios de pago"
                 value="Transferencia y Mercado Pago"
               />
@@ -608,6 +620,9 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
               </span>
               <span className="inline-flex h-8 items-center rounded-md bg-[#ea044e] px-3 text-white">
                 PedidosYa
+              </span>
+              <span className="inline-flex h-8 items-center gap-2 rounded-md bg-sky-100 px-3 text-sky-900">
+                <SiMercadopago size={18} className="text-sky-600" /> Mercado Pago
               </span>
             </div>
           </div>
@@ -653,6 +668,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           onCustomer={updateCustomer}
           onDetectZone={detectZone}
           deliveryEnabled={settings.deliveryEnabled}
+          addressSearchEnabled={settings.addressSearchEnabled}
           deliveryZones={activeZones}
           zoneStatus={zoneStatus}
           addressResults={addressResults}
@@ -675,6 +691,19 @@ function readLocal<T>(key: string, fallback: T): T {
     window.localStorage.removeItem(key);
     return fallback;
   }
+}
+
+function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
+  const whatsappDigits = settings.whatsappNumber?.replace(/\D/g, "");
+  return {
+    ...defaultSettings,
+    ...settings,
+    whatsappNumber: whatsappDigits === "56939351855" || whatsappDigits === "56912345678"
+      ? "56989351855"
+      : settings.whatsappNumber || defaultSettings.whatsappNumber,
+    bankDetails: { ...defaultSettings.bankDetails, ...settings.bankDetails },
+    seo: { ...defaultSettings.seo, ...settings.seo },
+  };
 }
 
 function resizeImage(file: File) {
@@ -719,7 +748,7 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
   ];
 
   return (
-    <header className="sticky top-0 z-30 border-b border-neutral-200/80 bg-[#f7f4ef]/95 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b border-neutral-200/80 bg-[#f7f4ef]/95 backdrop-blur supports-[backdrop-filter]:bg-[#f7f4ef]/85">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-2">
           <button
@@ -734,7 +763,7 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
           <a href="#catalogo" className="flex min-w-0 items-center gap-3">
           <img src="/fonocopete-logo-circle.jpg" alt="" className="size-11 shrink-0 rounded-full border border-neutral-200 object-cover" />
           <span className="min-w-0">
-            <span className="block truncate text-base font-black uppercase leading-tight tracking-wide sm:text-lg">{settings.businessName}</span>
+            <span className="block truncate text-base font-black uppercase leading-tight tracking-wide sm:text-lg">Fonocopete</span>
             <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Botillería delivery</span>
           </span>
           </a>
@@ -1006,6 +1035,7 @@ function CheckoutPanel(props: {
   onCustomer: (field: keyof CustomerDetails, value: string | boolean) => void;
   onDetectZone: () => void;
   deliveryEnabled: boolean;
+  addressSearchEnabled: boolean;
   deliveryZones: DeliveryZone[];
   zoneStatus: string;
   addressResults: Array<{
@@ -1021,7 +1051,8 @@ function CheckoutPanel(props: {
     location: { lat: number; lng: number };
   }) => void;
 }) {
-  const manualMode = !props.deliveryEnabled || props.customer.manualAddress;
+  const canSearchAddress = props.deliveryEnabled && props.addressSearchEnabled;
+  const manualMode = !props.deliveryEnabled || !props.addressSearchEnabled || props.customer.manualAddress;
   const [phoneCountry, setPhoneCountry] = useState("56");
   const countryConfig = latinAmericanPhones.find((country) => country.code === phoneCountry) ?? latinAmericanPhones[0];
   const phoneDigits = props.customer.phone.replace(/\D/g, "");
@@ -1077,7 +1108,7 @@ function CheckoutPanel(props: {
         </div>
         <div className="mt-4 grid gap-3">
           <Input label="Nombre" value={props.customer.name} onChange={(value) => props.onCustomer("name", value)} required />
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3">
             <label className="grid gap-1 text-sm font-bold">
               Teléfono
               <span className="flex min-w-0">
@@ -1111,7 +1142,7 @@ function CheckoutPanel(props: {
             <Input label="Email" type="email" value={props.customer.email} onChange={(value) => props.onCustomer("email", value)} required />
           </div>
           <>
-              {props.deliveryEnabled ? (
+              {canSearchAddress ? (
               <label className="flex items-center gap-2 rounded-lg bg-neutral-100 px-3 py-2 text-sm font-bold">
                 <input
                   type="checkbox"
@@ -1120,12 +1151,12 @@ function CheckoutPanel(props: {
                 />
                 Ingresar dirección manualmente
               </label>
-              ) : (
+              ) : !props.deliveryEnabled ? (
                 <div className="rounded-lg border border-green-200 bg-green-50 p-3">
                   <p className="font-black text-green-900">Despacho manual sin cobro</p>
                   <p className="mt-1 text-sm text-green-800">Ingresa la dirección y zona. El precio de despacho no se mostrará ni se sumará al pedido.</p>
                 </div>
-              )}
+              ) : null}
               <label className="grid gap-1 text-sm font-bold">
                 Dirección
                 <div className="flex gap-2">
@@ -1174,9 +1205,9 @@ function CheckoutPanel(props: {
                   </label>
                 </>
               ) : null}
-              {!manualMode ? (
+              {canSearchAddress && !manualMode ? (
                 <p className="text-xs font-semibold text-neutral-500">
-                  Búsqueda por <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a>.
+                  Búsqueda por <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer" className="underline">OpenStreetMap</a> (Beta).
                 </p>
               ) : null}
             </>
@@ -1207,21 +1238,30 @@ function CheckoutPanel(props: {
 function PaymentDialog(props: {
   settings: SiteSettings;
   total: number;
-  registeredOrder: { id: string; orderNumber: string } | null;
+  registeredOrder: { id: string; orderNumber: string; paymentMethod?: OrderPayload["paymentMethod"] } | null;
   onClose: () => void;
   onOpenMercadoPago: () => void;
   onRegister: (
     paymentMethod: OrderPayload["paymentMethod"],
     purpose: "order" | "mercadopago" | "transfer",
     notifyWhatsApp: boolean,
-  ) => void;
+  ) => Promise<boolean>;
 }) {
   const [advanceMethod, setAdvanceMethod] = useState<"mercadopago" | "transfer">("mercadopago");
-  /*
-    "Hola, realicé una transferencia y deseo enviar mi comprobante de pago.",
-  )}`;
-  */
+  const [lockedMethod, setLockedMethod] = useState<OrderPayload["paymentMethod"] | null>(props.registeredOrder?.paymentMethod ?? null);
+  const [whatsappSent, setWhatsappSent] = useState(false);
+  const isLocked = Boolean(lockedMethod);
+  const canUseAdvance = props.settings.advancePaymentEnabled && (!isLocked || lockedMethod === advanceMethod);
 
+  async function registerFirst(paymentMethod: OrderPayload["paymentMethod"], purpose: "order" | "mercadopago" | "transfer") {
+    const ok = await props.onRegister(paymentMethod, purpose, false);
+    if (ok) setLockedMethod(paymentMethod);
+  }
+
+  async function notifyWhatsApp(paymentMethod: OrderPayload["paymentMethod"], purpose: "order" | "mercadopago" | "transfer") {
+    const ok = await props.onRegister(paymentMethod, purpose, true);
+    if (ok) setWhatsappSent(true);
+  }
   return (
     <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-neutral-950/80 px-4 py-6 backdrop-blur">
       <div className="w-full max-w-3xl rounded-lg bg-white p-5 shadow-2xl">
@@ -1236,30 +1276,58 @@ function PaymentDialog(props: {
           </button>
         </div>
         <div className="grid gap-4">
-          <section className="rounded-lg border border-neutral-200 p-4">
+          <section className={`rounded-lg border p-4 ${lockedMethod && lockedMethod !== "cash_on_delivery" ? "border-neutral-200 bg-neutral-50 opacity-60" : "border-neutral-200"}`}>
             <h3 className="text-lg font-black">Pago contra entrega</h3>
             <p className="mt-2 text-sm leading-6 text-neutral-600">
               Paga cuando recibas tu pedido. La confirmación manual puede aumentar ligeramente el tiempo de entrega.
             </p>
-            <button type="button" onClick={() => props.onRegister("cash_on_delivery", "order", true)} className="action-button mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-green-600 text-sm font-black text-white">
+            <div className="mt-4 min-w-0 rounded-lg bg-neutral-50 p-3">
+              <p className="mb-2 text-sm font-black">Datos disponibles si prefieres transferir al recibir:</p>
+              <BankDetails settings={props.settings} />
+            </div>
+            <button
+              type="button"
+              disabled={isLocked}
+              onClick={() => void registerFirst("cash_on_delivery", "order")}
+              className="action-button mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Check size={18} />
+              Confirmar pago y registrar pedido
+            </button>
+            <button
+              type="button"
+              disabled={lockedMethod !== "cash_on_delivery"}
+              onClick={() => void notifyWhatsApp("cash_on_delivery", "order")}
+              className="action-button mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-green-600 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
+            >
               <FaWhatsapp size={19} />
               Registrar y confirmar por WhatsApp
             </button>
+            {lockedMethod === "cash_on_delivery" && !whatsappSent ? (
+              <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs font-black text-amber-900">Obligatorio: ahora presiona el botón de WhatsApp para enviar los datos del pedido.</p>
+            ) : null}
           </section>
-          <section className="rounded-lg border border-neutral-200 p-4">
-            <h3 className="text-lg font-black">Pago anticipado</h3>
+          <section className={`rounded-lg border p-4 ${!props.settings.advancePaymentEnabled || lockedMethod === "cash_on_delivery" ? "border-neutral-200 bg-neutral-50 opacity-60" : "border-neutral-200"}`}>
+            <h3 className="text-lg font-black">Pago anticipado <span className="text-xs text-red-600">(Beta)</span></h3>
             <p className="mt-2 text-sm leading-6 text-neutral-600">Paga antes del despacho mediante Mercado Pago o transferencia bancaria.</p>
+            {!props.settings.advancePaymentEnabled ? (
+              <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-black text-amber-900">Pago anticipado desactivado desde ajustes.</p>
+            ) : null}
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <SegmentButton active={advanceMethod === "mercadopago"} onClick={() => setAdvanceMethod("mercadopago")}>Mercado Pago</SegmentButton>
-              <SegmentButton active={advanceMethod === "transfer"} onClick={() => setAdvanceMethod("transfer")}>Transferencia</SegmentButton>
+              <SegmentButton active={advanceMethod === "mercadopago"} disabled={!canUseAdvance || isLocked} onClick={() => setAdvanceMethod("mercadopago")}>Mercado Pago</SegmentButton>
+              <SegmentButton active={advanceMethod === "transfer"} disabled={!canUseAdvance || isLocked} onClick={() => setAdvanceMethod("transfer")}>Transferencia</SegmentButton>
             </div>
             {advanceMethod === "mercadopago" ? (
               <div className="mt-4 rounded-lg bg-sky-50 p-4">
-                <button type="button" onClick={props.onOpenMercadoPago} className="action-button flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-sky-600 text-sm font-black text-white">
+                <button type="button" disabled={!canUseAdvance || isLocked} onClick={props.onOpenMercadoPago} className="action-button flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-sky-600 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">
                   <SiMercadopago size={25} />
                   Pagar con Mercado Pago
                 </button>
-                <button type="button" onClick={() => props.onRegister("mercadopago", "mercadopago", true)} className="action-button mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-sky-300 bg-white text-sm font-black text-sky-800">
+                <button type="button" disabled={!canUseAdvance || isLocked} onClick={() => void registerFirst("mercadopago", "mercadopago")} className="action-button mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">
+                  <Check size={18} />
+                  Confirmar pago y registrar pedido
+                </button>
+                <button type="button" disabled={lockedMethod !== "mercadopago"} onClick={() => void notifyWhatsApp("mercadopago", "mercadopago")} className="action-button mt-2 flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-sky-300 bg-white text-sm font-black text-sky-800 disabled:cursor-not-allowed disabled:opacity-45">
                   <FaWhatsapp size={19} />
                   Avisar pago por WhatsApp
                 </button>
@@ -1267,17 +1335,19 @@ function PaymentDialog(props: {
             ) : (
               <div className="mt-4 min-w-0 rounded-lg bg-neutral-50 p-4">
                 <BankDetails settings={props.settings} />
-                <button type="button" onClick={() => props.onRegister("transfer", "transfer", true)} className="action-button mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-center text-sm font-black text-white">
+                <button type="button" disabled={!canUseAdvance || isLocked} onClick={() => void registerFirst("transfer", "transfer")} className="action-button mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 px-3 py-2 text-center text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50">
+                  <Check size={18} />
+                  Confirmar pago y registrar pedido
+                </button>
+                <button type="button" disabled={lockedMethod !== "transfer"} onClick={() => void notifyWhatsApp("transfer", "transfer")} className="action-button mt-2 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-3 py-2 text-center text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-45">
                   <FaWhatsapp size={19} />
                   Enviar comprobante por WhatsApp
                 </button>
               </div>
             )}
-            <button type="button" onClick={() => props.onRegister(advanceMethod, advanceMethod, false)} className="action-button mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 px-3 py-2 text-center text-sm font-black text-white">
-              <Check size={18} />
-              Confirmar pago y registrar pedido
-            </button>
-            <p className="mt-2 text-center text-xs font-semibold text-neutral-500">Usa este botón cuando el pago ya fue realizado.</p>
+            {lockedMethod && lockedMethod !== "cash_on_delivery" && !whatsappSent ? (
+              <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs font-black text-amber-900">Obligatorio: después de registrar, avisa por WhatsApp para que podamos revisar el pago.</p>
+            ) : null}
           </section>
         </div>
       </div>
@@ -1659,6 +1729,14 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
                 >
                   {product.featured ? "Destacado activo" : "Marcar destacado"}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void props.onSaveProduct(product)}
+                  className="action-button flex h-10 items-center justify-center gap-2 rounded-md bg-neutral-950 text-sm font-black text-white"
+                >
+                  <Save size={17} />
+                  Guardar cambios
+                </button>
                 <div className="grid grid-cols-2 gap-2">
                   <button type="button" onClick={() => {
                     const stock = product.stock === "hidden" ? "available" : "hidden";
@@ -1759,6 +1837,16 @@ function CategoriesAdmin({
         {status ? <p className="mt-3 text-sm font-bold text-neutral-600">{status}</p> : null}
       </form>
       <div className="grid gap-3">
+        <div className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-bold text-neutral-600">Edita nombres u orden y guarda los cambios cuando termines.</p>
+          <button
+            type="button"
+            onClick={() => void saveCategories(categories, "Categorías guardadas.")}
+            className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 px-4 text-sm font-black text-white"
+          >
+            <Save size={18} /> Guardar categorías
+          </button>
+        </div>
         {categories.map((category, index) => (
           <div key={category.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-3 sm:grid-cols-[88px_minmax(0,1fr)_auto] sm:items-center">
             <span className="text-sm font-black text-neutral-400">Orden {index + 1}</span>
@@ -1767,7 +1855,6 @@ function CategoriesAdmin({
               onChange={(event) =>
                 setCategories(categories.map((item) => item.id === category.id ? { ...item, label: event.target.value } : item))
               }
-              onBlur={() => void saveCategories(categories, "Categoría actualizada.")}
               className="h-10 min-w-0 rounded-lg border border-neutral-300 px-3 font-bold"
             />
             <div className="flex gap-2">
@@ -1931,7 +2018,24 @@ function SettingsAdmin({
       <BooleanControl
         label="Cálculo y cobro de despacho"
         value={draft.deliveryEnabled}
-        onChange={(deliveryEnabled) => setDraft({ ...draft, deliveryEnabled })}
+        onChange={(deliveryEnabled) => setDraft({ ...draft, deliveryEnabled, addressSearchEnabled: deliveryEnabled ? draft.addressSearchEnabled : false })}
+        activeLabel="Activar"
+        inactiveLabel="Desactivar"
+        activeTone="success"
+      />
+      <BooleanControl
+        label="Búsqueda por OpenStreetMap (Beta)"
+        value={draft.addressSearchEnabled}
+        onChange={(addressSearchEnabled) => setDraft({ ...draft, addressSearchEnabled: draft.deliveryEnabled ? addressSearchEnabled : false })}
+        activeLabel="Activar"
+        inactiveLabel="Desactivar"
+        activeTone="success"
+        disabled={!draft.deliveryEnabled}
+      />
+      <BooleanControl
+        label="Pago anticipado (Beta)"
+        value={draft.advancePaymentEnabled}
+        onChange={(advancePaymentEnabled) => setDraft({ ...draft, advancePaymentEnabled })}
         activeLabel="Activar"
         inactiveLabel="Desactivar"
         activeTone="success"
@@ -1945,12 +2049,35 @@ function SettingsAdmin({
       <div className="lg:col-span-2">
         <Textarea label="Mensaje mantenimiento" value={draft.maintenanceMessage} onChange={(value) => setDraft({ ...draft, maintenanceMessage: value })} />
       </div>
+      <div className="lg:col-span-2">
+        <Textarea label="Mensaje inicial de WhatsApp (Beta)" value={draft.whatsappMessageIntro} onChange={(value) => setDraft({ ...draft, whatsappMessageIntro: value })} />
+      </div>
       <Input label="Banco" value={draft.bankDetails.bank} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, bank: value } })} />
       <Input label="Titular" value={draft.bankDetails.accountHolder} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountHolder: value } })} />
       <Input label="Tipo de cuenta" value={draft.bankDetails.accountType} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountType: value } })} />
       <Input label="Número de cuenta" value={draft.bankDetails.accountNumber} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountNumber: value } })} />
       <Input label="RUT" value={draft.bankDetails.rut} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, rut: value } })} />
       <Input label="Correo pagos" type="email" value={draft.bankDetails.email} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, email: value } })} />
+      <fieldset className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 lg:col-span-2 lg:grid-cols-2">
+        <legend className="px-1 text-sm font-black">SEO</legend>
+        <Input label="Título SEO" value={draft.seo.title} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, title: value } })} />
+        <Input label="Plantilla de título" value={draft.seo.titleTemplate} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, titleTemplate: value } })} />
+        <div className="lg:col-span-2">
+          <Textarea label="Descripción SEO" value={draft.seo.description} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, description: value } })} />
+        </div>
+        <div className="lg:col-span-2">
+          <Textarea label="Palabras clave separadas por coma" value={draft.seo.keywords} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, keywords: value } })} />
+        </div>
+        <Input label="Open Graph título" value={draft.seo.ogTitle} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, ogTitle: value } })} />
+        <Input label="Twitter título" value={draft.seo.twitterTitle} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, twitterTitle: value } })} />
+        <div className="lg:col-span-2">
+          <Textarea label="Open Graph descripción" value={draft.seo.ogDescription} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, ogDescription: value } })} />
+        </div>
+        <div className="lg:col-span-2">
+          <Textarea label="Twitter descripción" value={draft.seo.twitterDescription} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, twitterDescription: value } })} />
+        </div>
+        <Input label="Ruta canonical" value={draft.seo.canonicalPath} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, canonicalPath: value } })} />
+      </fieldset>
       <button
         disabled={syncStatus === "syncing"}
         className={`action-button flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-black text-white disabled:cursor-wait lg:col-span-2 ${
@@ -1971,6 +2098,7 @@ function BooleanControl({
   activeLabel,
   inactiveLabel,
   activeTone,
+  disabled = false,
 }: {
   label: string;
   value: boolean;
@@ -1978,6 +2106,7 @@ function BooleanControl({
   activeLabel: string;
   inactiveLabel: string;
   activeTone: "success" | "danger";
+  disabled?: boolean;
 }) {
   const activeClass = activeTone === "danger" ? "bg-red-600 text-white" : "bg-green-600 text-white";
   return (
@@ -1987,16 +2116,18 @@ function BooleanControl({
         <button
           type="button"
           aria-pressed={value}
+          disabled={disabled}
           onClick={() => onChange(true)}
-          className={`action-button h-10 rounded-lg text-sm font-black ${value ? activeClass : "bg-neutral-100 text-neutral-600"}`}
+          className={`action-button h-10 rounded-lg text-sm font-black disabled:cursor-not-allowed disabled:opacity-40 ${value ? activeClass : "bg-neutral-100 text-neutral-600"}`}
         >
           {activeLabel}
         </button>
         <button
           type="button"
           aria-pressed={!value}
+          disabled={disabled}
           onClick={() => onChange(false)}
-          className={`action-button h-10 rounded-lg text-sm font-black ${!value ? "bg-neutral-950 text-white" : "bg-neutral-100 text-neutral-600"}`}
+          className={`action-button h-10 rounded-lg text-sm font-black disabled:cursor-not-allowed disabled:opacity-40 ${!value ? "bg-neutral-950 text-white" : "bg-neutral-100 text-neutral-600"}`}
         >
           {inactiveLabel}
         </button>
@@ -2253,9 +2384,9 @@ function OrderTotals({
   );
 }
 
-function SegmentButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function SegmentButton({ active, onClick, children, disabled = false }: { active: boolean; onClick: () => void; children: React.ReactNode; disabled?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className={`h-10 rounded-lg px-4 text-sm font-black transition ${active ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"}`}>
+    <button type="button" disabled={disabled} onClick={onClick} className={`h-10 rounded-lg px-4 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-45 ${active ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"}`}>
       {children}
     </button>
   );

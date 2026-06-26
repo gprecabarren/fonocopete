@@ -11,32 +11,55 @@ export function normalizeChilePhone(value: string) {
 }
 
 export function buildWhatsAppMessage(order: OrderPayload, purpose: "order" | "mercadopago" | "transfer" = "order") {
-  const lines = order.items
+  const productLines = order.items
     .map((item) => `- ${item.quantity}x ${item.name}: ${formatCurrency(item.lineTotal)}`)
     .join("\n");
-
-  return [
+  const paymentLabel =
+    order.paymentMethod === "cash_on_delivery"
+      ? "Pago contra entrega"
+      : order.paymentMethod === "mercadopago"
+        ? "Mercado Pago"
+        : "Transferencia bancaria";
+  const defaultIntro =
     purpose === "mercadopago"
       ? "Hola, realice el pago por Mercado Pago para este pedido:"
       : purpose === "transfer"
         ? "Hola, realice una transferencia para este pedido:"
-        : "Hola, quiero confirmar este pedido:",
+        : "Hola, quiero confirmar este pedido:";
+  const bankLines = order.bankDetails
+    ? [
+        "",
+        "*Datos de transferencia:*",
+        `Banco: ${order.bankDetails.bank}`,
+        `Titular: ${order.bankDetails.accountHolder}`,
+        `${order.bankDetails.accountType}: ${order.bankDetails.accountNumber}`,
+        `RUT: ${order.bankDetails.rut}`,
+        `Correo: ${order.bankDetails.email}`,
+      ]
+    : [];
+
+  return [
+    order.whatsappMessageIntro?.trim() || defaultIntro,
     order.orderNumber ? `Pedido: *${order.orderNumber}*` : "",
     "",
-    lines,
+    "*Productos:*",
+    productLines,
     "",
     `Subtotal: ${formatCurrency(order.subtotal)}`,
     `Delivery: ${order.zoneName} - ${formatCurrency(order.delivery)}`,
     `Total: ${formatCurrency(order.total)}`,
+    `Metodo de pago: ${paymentLabel}`,
     "",
+    "*Datos del cliente:*",
     `Nombre: ${order.customer.name}`,
-    `Teléfono: ${order.customer.phone}`,
+    `Telefono: ${order.customer.phone}`,
     `Email: ${order.customer.email}`,
-    `Dirección: ${order.customer.address}`,
+    `Direccion: ${order.customer.address}`,
     order.customer.addressExtra ? `Complemento: ${order.customer.addressExtra}` : "",
+    order.zoneName ? `Zona: ${order.zoneName}` : "",
     order.customer.notes ? `Notas: ${order.customer.notes}` : "",
-    "",
-    `Link de pago: ${order.paymentLink}`,
+    ...(purpose === "transfer" ? bankLines : []),
+    purpose === "mercadopago" ? `Link de pago: ${order.paymentLink}` : "",
     purpose === "transfer" ? "*Y adjunto el comprobante de compra aqui.*" : "",
   ]
     .filter(Boolean)
@@ -48,7 +71,7 @@ export function buildWhatsAppUrl(
   configuredNumber?: string,
   purpose: "order" | "mercadopago" | "transfer" = "order",
 ) {
-  const fallbackNumber = "56912345678";
+  const fallbackNumber = "56989351855";
   const phone = normalizeChilePhone(configuredNumber || process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || fallbackNumber);
   return `https://wa.me/${phone}?text=${encodeURIComponent(buildWhatsAppMessage(order, purpose))}`;
 }

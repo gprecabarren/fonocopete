@@ -65,6 +65,8 @@ export type OrderPayload = {
   paymentLink: string;
   paymentMethod: "cash_on_delivery" | "mercadopago" | "transfer";
   orderNumber?: string;
+  bankDetails?: BankDetails;
+  whatsappMessageIntro?: string;
 };
 
 export type SavedOrder = {
@@ -103,16 +105,32 @@ export type BankDetails = {
   email: string;
 };
 
+export type SeoSettings = {
+  title: string;
+  titleTemplate: string;
+  description: string;
+  keywords: string;
+  ogTitle: string;
+  ogDescription: string;
+  twitterTitle: string;
+  twitterDescription: string;
+  canonicalPath: string;
+};
+
 export type SiteSettings = {
   businessName: string;
   maintenanceMode: boolean;
   deliveryEnabled: boolean;
+  addressSearchEnabled: boolean;
+  advancePaymentEnabled: boolean;
   maintenanceMessage: string;
   whatsappNumber: string;
   contactEmail: string;
   instagramUrl: string;
   facebookUrl: string;
   mercadoPagoLink: string;
+  whatsappMessageIntro: string;
+  seo: SeoSettings;
   faqs: FaqItem[];
   bankDetails: BankDetails;
 };

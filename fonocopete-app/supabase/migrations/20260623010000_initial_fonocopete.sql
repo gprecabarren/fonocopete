@@ -88,7 +88,7 @@ values (
     "businessName": "Fonocopete MAVERIK",
     "maintenanceMode": false,
     "maintenanceMessage": "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Inténtalo nuevamente más tarde.",
-    "whatsappNumber": "56912345678",
+    "whatsappNumber": "56989351855",
     "mercadoPagoLink": "https://www.mercadopago.cl/",
     "bankDetails": {
       "bank": "Banco de Chile",

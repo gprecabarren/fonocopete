@@ -21,7 +21,7 @@ on conflict (id) do update set
 update public.site_settings
 set value = value || '{
   "deliveryEnabled": true,
-  "whatsappNumber": "56939351855",
+  "whatsappNumber": "56989351855",
   "contactEmail": "fonocopeteconcepcion.maverik@gmail.com",
   "instagramUrl": "https://www.instagram.com/fonocopeteconcepcion.maverik/",
   "facebookUrl": "https://www.instagram.com/fonocopeteconcepcion.maverik/"

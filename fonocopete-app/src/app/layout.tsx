@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { defaultSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+import type { SiteSettings } from "@/lib/types";
 import "./globals.css";
 
 const roboto = localFont({
@@ -10,6 +13,7 @@ const roboto = localFont({
     { path: "./fonts/Roboto-Bold.ttf", weight: "700" },
   ],
 });
+
 const montserrat = localFont({
   variable: "--font-montserrat",
   src: [
@@ -19,51 +23,60 @@ const montserrat = localFont({
   ],
 });
 
-export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
-  title: {
-    default: "Fonocopete Concepción | Botillería y delivery",
-    template: "%s | Fonocopete Concepción",
-  },
-  description:
-    "Catálogo online de Fonocopete Concepción. Compra cervezas, piscos, vinos, destilados y promociones con pedidos directos por WhatsApp.",
-  keywords: [
-    "Fonocopete Concepción",
-    "botillería Concepción",
-    "delivery de alcohol Concepción",
-    "licores Concepción",
-    "cervezas Concepción",
-    "piscos Concepción",
-  ],
-  alternates: { canonical: "/" },
-  openGraph: {
-    type: "website",
-    locale: "es_CL",
-    url: "/",
-    siteName: "Fonocopete Concepción",
-    title: "Fonocopete Concepción | Botillería y delivery",
-    description:
-      "Cervezas, piscos, vinos, destilados y promociones con pedidos directos por WhatsApp en Concepción y alrededores.",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Fonocopete Concepción | Botillería y delivery",
-    description:
-      "Catálogo de licores y promociones con pedidos directos por WhatsApp en Concepción.",
-  },
-  category: "Botillería y delivery de bebidas",
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
+export const dynamic = "force-dynamic";
+
+async function getSeoSettings() {
+  const supabase = createServerSupabaseClient();
+  if (!supabase) return defaultSettings.seo;
+
+  const { data } = await supabase.from("site_settings").select("value").eq("key", "main").single();
+  const settings = data?.value as Partial<SiteSettings> | undefined;
+  return { ...defaultSettings.seo, ...settings?.seo };
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const seo = await getSeoSettings();
+  const keywords = seo.keywords
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+
+  return {
+    metadataBase: new URL(siteUrl),
+    title: {
+      default: seo.title,
+      template: seo.titleTemplate,
+    },
+    description: seo.description,
+    keywords,
+    alternates: { canonical: seo.canonicalPath || "/" },
+    openGraph: {
+      type: "website",
+      locale: "es_CL",
+      url: seo.canonicalPath || "/",
+      siteName: "Fonocopete Concepcion",
+      title: seo.ogTitle,
+      description: seo.ogDescription,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: seo.twitterTitle,
+      description: seo.twitterDescription,
+    },
+    category: "Botilleria y delivery de bebidas",
+    robots: {
       index: true,
       follow: true,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-      "max-video-preview": -1,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+        "max-video-preview": -1,
+      },
     },
-  },
-};
+  };
+}
 
 export default function RootLayout({
   children,

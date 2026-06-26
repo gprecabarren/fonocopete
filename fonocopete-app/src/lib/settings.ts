@@ -8,13 +8,31 @@ export const defaultSettings: SiteSettings = {
   businessName: "Fonocopete MAVERIK",
   maintenanceMode: forceMaintenance,
   deliveryEnabled: true,
+  addressSearchEnabled: false,
+  advancePaymentEnabled: true,
   maintenanceMessage:
     "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Inténtalo nuevamente más tarde.",
-  whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56939351855",
+  whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56989351855",
   contactEmail: "fonocopeteconcepcion.maverik@gmail.com",
   instagramUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",
   facebookUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",
   mercadoPagoLink: process.env.NEXT_PUBLIC_MERCADOPAGO_LINK || "https://www.mercadopago.cl/",
+  whatsappMessageIntro: "Hola, quiero confirmar este pedido de Fonocopete:",
+  seo: {
+    title: "Fonocopete Concepcion | Botilleria y delivery",
+    titleTemplate: "%s | Fonocopete Concepcion",
+    description:
+      "Catalogo online de Fonocopete Concepcion. Compra cervezas, piscos, vinos, destilados y promociones con pedidos directos por WhatsApp.",
+    keywords:
+      "Fonocopete Concepcion, botilleria Concepcion, delivery de alcohol Concepcion, licores Concepcion, cervezas Concepcion, piscos Concepcion",
+    ogTitle: "Fonocopete Concepcion | Botilleria y delivery",
+    ogDescription:
+      "Cervezas, piscos, vinos, destilados y promociones con pedidos directos por WhatsApp en Concepcion y alrededores.",
+    twitterTitle: "Fonocopete Concepcion | Botilleria y delivery",
+    twitterDescription:
+      "Catalogo de licores y promociones con pedidos directos por WhatsApp en Concepcion.",
+    canonicalPath: "/",
+  },
   faqs: faqs.map((faq, index) => ({ id: `faq-${index + 1}`, ...faq })),
   bankDetails: {
     bank: "Banco de Chile",
