@@ -46,7 +46,7 @@ export async function GET() {
     .from("orders")
     .select("*, order_items(*)")
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(1000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({

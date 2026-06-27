@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Copy,
   CreditCard,
+  Download,
   Eye,
   EyeOff,
   LogIn,
@@ -1559,6 +1560,41 @@ function formatBankDetailsForTransfer(bank: SiteSettings["bankDetails"]) {
   ].join("\n");
 }
 
+function csvEscape(value: unknown) {
+  const text = value == null
+    ? ""
+    : Array.isArray(value) || typeof value === "object"
+      ? JSON.stringify(value)
+      : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function downloadTextFile(filename: string, content: string, type = "text/csv;charset=utf-8") {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function exportCsv(filename: string, headers: string[], rows: Array<Array<unknown>>) {
+  const delimiter = ";";
+  const csv = [
+    headers.map(csvEscape).join(delimiter),
+    ...rows.map((row) => row.map(csvEscape).join(delimiter)),
+  ].join("\n");
+  downloadTextFile(filename, `\uFEFF${csv}`);
+}
+
+function flattenRecord(value: unknown, prefix = ""): Array<[string, unknown]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [[prefix, value]];
+  return Object.entries(value).flatMap(([key, entry]) => flattenRecord(entry, prefix ? `${prefix}.${key}` : key));
+}
+
 async function copyTextToClipboard(text: string) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -1749,6 +1785,8 @@ function AdminPanel(props: {
           <SettingsAdmin
             key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}-${props.settings.attendanceStatusEnabled}-${props.settings.isAttending}-${props.settings.attendanceScheduleEnabled}-${props.settings.minimumOrderAmount}`}
             settings={props.settings}
+            products={props.products}
+            orders={props.orders}
             onSaveSettings={props.onSaveSettings}
             syncStatus={props.syncStatus}
           />
@@ -2954,10 +2992,14 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
 
 function SettingsAdmin({
   settings,
+  products,
+  orders,
   onSaveSettings,
   syncStatus,
 }: {
   settings: SiteSettings;
+  products: Product[];
+  orders: SavedOrder[];
   onSaveSettings: (settings: SiteSettings) => Promise<void>;
   syncStatus: "idle" | "syncing" | "saved" | "error";
 }) {
@@ -3101,8 +3143,113 @@ function SettingsAdmin({
         <Input label="RUT" value={draft.bankDetails.rut} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, rut: value } })} />
         <Input label="Correo pagos" type="email" value={draft.bankDetails.email} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, email: value } })} />
       </SettingsSection>
+      <BackupExportPanel products={products} orders={orders} settings={draft} />
       <SaveSettingsButton syncStatus={syncStatus} label="Guardar ajustes" savedLabel="Ajustes guardados" />
     </form>
+  );
+}
+
+function BackupExportPanel({ products, orders, settings }: { products: Product[]; orders: SavedOrder[]; settings: SiteSettings }) {
+  const dateLabel = new Date().toISOString().slice(0, 10);
+
+  function exportProducts() {
+    exportCsv(
+      `fonocopete-productos-${dateLabel}.csv`,
+      ["id", "nombre", "categoria", "precio_normal", "precio_original", "tipo_cerveza", "volumen", "descripcion", "stock", "destacado", "imagen"],
+      products.map((product) => [
+        product.id,
+        product.name,
+        product.category,
+        product.price,
+        product.originalPrice || "",
+        product.beerFormat || "",
+        product.volume,
+        product.description,
+        product.stock,
+        product.featured ? "si" : "no",
+        product.imageUrl,
+      ]),
+    );
+  }
+
+  function exportOrders() {
+    exportCsv(
+      `fonocopete-pedidos-${dateLabel}.csv`,
+      [
+        "pedido",
+        "fecha",
+        "cliente",
+        "telefono",
+        "email",
+        "direccion",
+        "referencia",
+        "zona",
+        "subtotal",
+        "delivery",
+        "total",
+        "metodo_pago",
+        "estado_pago",
+        "estado_pedido",
+        "notas",
+        "productos",
+      ],
+      orders.map((order) => [
+        order.orderNumber,
+        order.createdAt,
+        order.customerName,
+        order.customerPhone,
+        order.customerEmail,
+        order.address,
+        order.addressExtra,
+        order.zoneName,
+        order.subtotal,
+        order.delivery,
+        order.total,
+        paymentMethodLabel(order.paymentMethod),
+        paymentStatusMeta(order.paymentStatus).label,
+        fulfillmentStatusMeta(order.fulfillmentStatus).label,
+        order.notes,
+        order.items.map((item) => `${item.quantity}x ${item.name} (${formatCurrency(item.lineTotal)})`).join(" | "),
+      ]),
+    );
+  }
+
+  function exportSettings() {
+    exportCsv(
+      `fonocopete-ajustes-${dateLabel}.csv`,
+      ["campo", "valor"],
+      flattenRecord(settings).map(([key, value]) => [key, value]),
+    );
+  }
+
+  function exportFullBackup() {
+    downloadTextFile(
+      `fonocopete-backup-completo-${dateLabel}.json`,
+      JSON.stringify({ exportedAt: new Date().toISOString(), products, orders, settings }, null, 2),
+      "application/json;charset=utf-8",
+    );
+  }
+
+  return (
+    <SettingsSection title="Backup y exportacion" description="Descarga respaldos compatibles con Excel para revisar o guardar fuera del sistema.">
+      <ExportButton label={`Productos (${products.length})`} onClick={exportProducts} />
+      <ExportButton label={`Pedidos (${orders.length})`} onClick={exportOrders} />
+      <ExportButton label="Ajustes CSV" onClick={exportSettings} />
+      <ExportButton label="Backup completo JSON" onClick={exportFullBackup} />
+    </SettingsSection>
+  );
+}
+
+function ExportButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 px-3 text-sm font-black text-white hover:bg-red-600"
+    >
+      <Download size={17} />
+      {label}
+    </button>
   );
 }
 
