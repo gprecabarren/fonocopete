@@ -134,6 +134,7 @@ export type SiteSettings = {
   deliveryEnabled: boolean;
   addressSearchEnabled: boolean;
   advancePaymentEnabled: boolean;
+  minimumOrderAmount: number;
   maintenanceMessage: string;
   whatsappNumber: string;
   contactEmail: string;

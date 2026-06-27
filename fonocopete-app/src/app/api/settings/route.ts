@@ -41,6 +41,7 @@ const settingsSchema = z.object({
   deliveryEnabled: z.boolean(),
   addressSearchEnabled: z.boolean(),
   advancePaymentEnabled: z.boolean(),
+  minimumOrderAmount: z.number().int().nonnegative(),
   maintenanceMessage: z.string().min(1),
   whatsappNumber: z.string().min(5),
   contactEmail: z.email(),

@@ -59,8 +59,17 @@ import type {
 const catalogStorageKey = "fonocopete.catalog";
 const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
-type AdminView = "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings" | "seo";
+type AdminView = "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings" | "seo" | "analytics";
 type ProductSortMode = "manual" | "price_asc" | "price_desc";
+type AnalyticsRange = "day" | "month" | "year";
+type AnalyticsSummary = {
+  range: AnalyticsRange;
+  date: string;
+  total: number;
+  previousTotal: number;
+  peakHour: string | null;
+  buckets: Array<{ label: string; value: number }>;
+};
 
 const latinAmericanPhones = [
   { code: "56", country: "Chile", flag: "🇨🇱", placeholder: "9 1234 5678" },
@@ -159,6 +168,15 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     const interval = window.setInterval(() => setCurrentTime(new Date()), 60000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (mode !== "store") return;
+    const today = new Date().toISOString().slice(0, 10);
+    const visitKey = `fonocopete.visit.${today}`;
+    if (window.sessionStorage.getItem(visitKey)) return;
+    window.sessionStorage.setItem(visitKey, "true");
+    fetch("/api/analytics", { method: "POST", keepalive: true }).catch(() => undefined);
+  }, [mode]);
 
   useEffect(() => {
     async function boot() {
@@ -346,6 +364,9 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   function validateCheckout() {
     if (settings.maintenanceMode) return "El sitio está en mantenimiento.";
     if (!cartLines.length) return "Agrega al menos un producto disponible.";
+    if (settings.minimumOrderAmount > 0 && subtotal < settings.minimumOrderAmount) {
+      return `El monto minimo de compra es ${formatCurrency(settings.minimumOrderAmount)}.`;
+    }
     if (!customer.name.trim()) return "Ingresa tu nombre.";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)) return "Ingresa un correo válido.";
     if (customer.phone.replace(/\D/g, "").length < 3) return "Ingresa al menos 3 dígitos en el teléfono.";
@@ -487,6 +508,10 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (!draft.name || draft.price <= 0) return;
     if (draft.originalPrice && draft.price <= 0) return;
     if (draft.category === "cervezas" && !draft.beerFormat) return;
+    if (hasDuplicateProductName(products, draft.name)) {
+      window.alert("Ya existe un producto con ese nombre.");
+      return;
+    }
 
     const nextProduct: Product = {
       ...draft,
@@ -508,7 +533,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   async function importBulkProducts() {
-    const imported = bulkText
+    const importedRaw = bulkText
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
@@ -528,6 +553,16 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         };
       })
       .filter((product) => product.name && product.price > 0);
+    const seenNames = new Set(products.map((product) => normalizeText(product.name)));
+    const imported = importedRaw.filter((product) => {
+      const cleanName = normalizeText(product.name);
+      if (seenNames.has(cleanName)) return false;
+      seenNames.add(cleanName);
+      return true;
+    });
+    if (importedRaw.length !== imported.length) {
+      window.alert("Se omitieron productos con nombres repetidos.");
+    }
 
     if (imported.length) {
       const savedProducts = await persistProducts(imported);
@@ -662,7 +697,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
               </span>
             </div>
           </div>
-          <div className="grid min-w-0 gap-4">
+          <div className="grid min-w-0 content-start gap-4">
             {featuredProducts.map((product) => (
               <FeaturedProduct key={product.id} product={product} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
             ))}
@@ -698,6 +733,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           subtotal={subtotal}
           deliveryPrice={deliveryPrice}
           total={total}
+          minimumOrderAmount={settings.minimumOrderAmount}
           orderStatus={orderStatus}
           checkoutError={checkoutError}
           onSubmit={openPaymentOptions}
@@ -788,6 +824,12 @@ function sortCatalogProducts(products: Product[], sortMode: ProductSortMode, pro
   });
 }
 
+function hasDuplicateProductName(products: Product[], name: string, currentId?: string) {
+  const cleanName = normalizeText(name);
+  if (!cleanName) return false;
+  return products.some((product) => product.id !== currentId && normalizeText(product.name) === cleanName);
+}
+
 function hasStreetAndNumber(address: string) {
   return /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(address) && /\d/.test(address);
 }
@@ -805,8 +847,8 @@ function resizeImage(file: File) {
     const image = new Image();
     image.onload = () => {
       const canvas = document.createElement("canvas");
-      const targetWidth = 900;
-      const targetHeight = 675;
+      const targetWidth = 1200;
+      const targetHeight = 900;
       canvas.width = targetWidth;
       canvas.height = targetHeight;
 
@@ -815,6 +857,8 @@ function resizeImage(file: File) {
         reject(new Error("No se pudo procesar la imagen"));
         return;
       }
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
 
       const sourceRatio = image.width / image.height;
       const targetRatio = targetWidth / targetHeight;
@@ -824,7 +868,7 @@ function resizeImage(file: File) {
       const sourceY = (image.height - sourceHeight) / 2;
 
       context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
-      resolve(canvas.toDataURL("image/jpeg", 0.82));
+      resolve(canvas.toDataURL("image/jpeg", 0.9));
     };
     image.onerror = () => reject(new Error("Imagen invalida"));
     image.src = URL.createObjectURL(file);
@@ -1083,7 +1127,7 @@ function FeaturedProduct({ product, onAdd, added }: { product: Product; onAdd: (
       type="button"
       onClick={onAdd}
       disabled={soldOut}
-      className={`action-button grid min-w-0 grid-cols-[96px_minmax(0,1fr)] overflow-hidden rounded-lg border bg-white text-left text-neutral-950 shadow-2xl disabled:opacity-75 sm:grid-cols-[112px_minmax(0,1fr)] ${
+      className={`action-button grid min-w-0 self-start grid-cols-[96px_minmax(0,1fr)] overflow-hidden rounded-lg border bg-white text-left text-neutral-950 shadow-2xl disabled:opacity-75 sm:grid-cols-[112px_minmax(0,1fr)] ${
         added ? "border-green-500 ring-4 ring-green-400/30" : "border-white/10"
       }`}
     >
@@ -1163,6 +1207,7 @@ function CheckoutPanel(props: {
   subtotal: number;
   deliveryPrice: number;
   total: number;
+  minimumOrderAmount: number;
   orderStatus: "idle" | "sending" | "sent" | "error";
   checkoutError: string;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -1354,6 +1399,7 @@ function CheckoutPanel(props: {
           total={props.total}
           zone={props.activeZone}
           deliveryEnabled={props.deliveryEnabled}
+          minimumOrderAmount={props.minimumOrderAmount}
         />
         {props.checkoutError ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{props.checkoutError}</p> : null}
         <button type="submit" className="action-button mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-red-600 text-sm font-black text-white hover:bg-red-700">
@@ -1663,6 +1709,7 @@ function AdminPanel(props: {
             <SegmentButton active={props.adminView === "faqs"} onClick={() => props.setAdminView("faqs")}>FAQ</SegmentButton>
             <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
             <SegmentButton active={props.adminView === "seo"} onClick={() => props.setAdminView("seo")}>SEO</SegmentButton>
+            <SegmentButton active={props.adminView === "analytics"} onClick={() => props.setAdminView("analytics")}>Visitas</SegmentButton>
             <button type="button" onClick={() => void logout()} className="flex h-10 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm font-black">
               <LogOut size={16} />
               Salir
@@ -1685,17 +1732,19 @@ function AdminPanel(props: {
           <FaqAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} />
         ) : props.adminView === "settings" ? (
           <SettingsAdmin
-            key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}-${props.settings.attendanceStatusEnabled}-${props.settings.isAttending}-${props.settings.attendanceScheduleEnabled}`}
+            key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}-${props.settings.attendanceStatusEnabled}-${props.settings.isAttending}-${props.settings.attendanceScheduleEnabled}-${props.settings.minimumOrderAmount}`}
             settings={props.settings}
             onSaveSettings={props.onSaveSettings}
             syncStatus={props.syncStatus}
           />
-        ) : (
+        ) : props.adminView === "seo" ? (
           <SeoAdmin
             settings={props.settings}
             onSaveSettings={props.onSaveSettings}
             syncStatus={props.syncStatus}
           />
+        ) : (
+          <AnalyticsAdmin />
         )}
       </div>
     </section>
@@ -2045,6 +2094,104 @@ function FaqAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSave
   );
 }
 
+function AnalyticsAdmin() {
+  const [range, setRange] = useState<AnalyticsRange>("day");
+  const [date, setDate] = useState(() => defaultAnalyticsDate("day"));
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [loading, setLoading] = useState(false);
+  const maxBucket = Math.max(1, ...(summary?.buckets.map((bucket) => bucket.value) || [1]));
+  const difference = summary ? summary.total - summary.previousTotal : 0;
+
+  useEffect(() => {
+    async function loadAnalytics() {
+      setLoading(true);
+      try {
+        const response = await fetch(`/api/analytics?range=${range}&date=${encodeURIComponent(date)}`);
+        if (!response.ok) return;
+        const data = (await response.json()) as { summary: AnalyticsSummary };
+        setSummary(data.summary);
+      } finally {
+        setLoading(false);
+      }
+    }
+    void loadAnalytics();
+  }, [range, date]);
+
+  return (
+    <section className="grid gap-4">
+      <div className="rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h3 className="text-2xl font-black">Visitas</h3>
+            <p className="mt-1 text-sm font-semibold text-neutral-600">Conteo simple por sesion para mirar movimiento de la pagina.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(["day", "month", "year"] as const).map((value) => (
+              <SegmentButton key={value} active={range === value} onClick={() => {
+                setRange(value);
+                setDate(defaultAnalyticsDate(value));
+              }}>
+                {value === "day" ? "Dia" : value === "month" ? "Mes" : "Ano"}
+              </SegmentButton>
+            ))}
+            <input
+              type={range === "day" ? "date" : range === "month" ? "month" : "number"}
+              value={date}
+              min={range === "year" ? "2024" : undefined}
+              max={range === "year" ? "2099" : undefined}
+              onChange={(event) => setDate(event.target.value)}
+              className="h-10 rounded-lg border border-neutral-300 bg-white px-3 text-sm font-black"
+            />
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <AnalyticsCard label="Visitas" value={loading ? "..." : String(summary?.total || 0)} />
+        <AnalyticsCard label="Periodo anterior" value={loading ? "..." : String(summary?.previousTotal || 0)} />
+        <AnalyticsCard
+          label="Hora peak"
+          value={loading ? "..." : summary?.peakHour || "Sin datos"}
+          note={difference === 0 ? "Sin variacion" : `${difference > 0 ? "+" : ""}${difference} vs anterior`}
+        />
+      </div>
+      <div className="rounded-lg border border-neutral-200 bg-white p-4">
+        <h4 className="mb-4 text-lg font-black">Detalle</h4>
+        <div className="grid gap-2">
+          {(summary?.buckets || []).map((bucket) => (
+            <div key={bucket.label} className="grid grid-cols-[58px_minmax(0,1fr)_48px] items-center gap-3 text-sm">
+              <span className="font-black text-neutral-600">{bucket.label}</span>
+              <div className="h-3 overflow-hidden rounded-full bg-neutral-100">
+                <div className="h-full rounded-full bg-red-600" style={{ width: `${Math.max(4, (bucket.value / maxBucket) * 100)}%` }} />
+              </div>
+              <span className="text-right font-black">{bucket.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function defaultAnalyticsDate(range: AnalyticsRange) {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  if (range === "year") return String(year);
+  if (range === "month") return `${year}-${month}`;
+  return `${year}-${month}-${day}`;
+}
+
+function AnalyticsCard({ label, value, note }: { label: string; value: string; note?: string }) {
+  return (
+    <div className="rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
+      <p className="text-xs font-black uppercase tracking-[0.14em] text-neutral-500">{label}</p>
+      <p className="mt-2 text-3xl font-black">{value}</p>
+      {note ? <p className="mt-1 text-sm font-bold text-red-700">{note}</p> : null}
+    </div>
+  );
+}
+
 function paymentStatusMeta(status: string) {
   if (status === "paid") return { label: "Pagado", className: "bg-green-100 text-green-800" };
   if (status === "refunded") return { label: "Reembolsado", className: "bg-sky-100 text-sky-800" };
@@ -2097,13 +2244,16 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
   const categoryIds = useMemo(() => new Set(props.categories.map((category) => category.id)), [props.categories]);
   const uncategorizedProducts = props.products.filter((product) => !categoryIds.has(product.category));
+  const featuredAdminProducts = props.products.filter((product) => product.featured);
   const orderableProductsInView =
-    productView !== "__latest" && productView !== "__uncategorized"
+    productView !== "__latest" && productView !== "__uncategorized" && productView !== "__featured"
       ? sortCatalogProducts(props.products.filter((product) => product.category === productView && product.stock !== "hidden" && product.stock !== "sold_out"), "manual", props.settings.productOrder)
       : [];
   const baseAdminProducts =
     productView === "__latest"
       ? props.products.slice(0, 5)
+      : productView === "__featured"
+        ? featuredAdminProducts
       : productView === "__uncategorized"
         ? uncategorizedProducts
         : sortCatalogProducts(props.products.filter((product) => product.category === productView), "manual", props.settings.productOrder);
@@ -2205,6 +2355,9 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             <CatalogFilterButton active={productView === "__latest"} onClick={() => setProductView("__latest")}>
               Últimos 5
             </CatalogFilterButton>
+            <CatalogFilterButton active={productView === "__featured"} onClick={() => setProductView("__featured")}>
+              Destacados ({featuredAdminProducts.length})
+            </CatalogFilterButton>
             {props.categories.map((category) => (
               <CatalogFilterButton key={category.id} active={productView === category.id} onClick={() => setProductView(category.id)}>
                 {category.label} ({props.products.filter((product) => product.category === category.id).length})
@@ -2223,7 +2376,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               products={props.products}
               categories={props.categories}
               categoryIds={categoryIds}
-              orderControls={!cleanAdminProductQuery && productView !== "__latest" && productView !== "__uncategorized" && product.stock !== "hidden" && product.stock !== "sold_out" ? {
+              orderControls={!cleanAdminProductQuery && productView !== "__latest" && productView !== "__featured" && productView !== "__uncategorized" && product.stock !== "hidden" && product.stock !== "sold_out" ? {
                 canMoveUp: orderableProductsInView.findIndex((item) => item.id === product.id) > 0,
                 canMoveDown: orderableProductsInView.findIndex((item) => item.id === product.id) !== -1 && orderableProductsInView.findIndex((item) => item.id === product.id) < orderableProductsInView.length - 1,
                 onMoveUp: () => void moveProductInCategory(product.id, -1),
@@ -2282,6 +2435,10 @@ function ProductAdminCard({
     }
     if (nextProduct.price <= 0) {
       window.alert("Ingresa un precio normal antes de guardar.");
+      return;
+    }
+    if (hasDuplicateProductName(products, nextProduct.name, nextProduct.id)) {
+      window.alert("Ya existe otro producto con ese nombre.");
       return;
     }
     if (!categoryIds.has(nextProduct.category)) {
@@ -2849,6 +3006,13 @@ function SettingsAdmin({
           inactiveLabel="Desactivar"
           activeTone="success"
         />
+        <Input
+          label="Monto minimo de compra"
+          type="number"
+          value={String(draft.minimumOrderAmount)}
+          placeholder="0 desactiva el minimo"
+          onChange={(value) => setDraft({ ...draft, minimumOrderAmount: Math.max(0, Math.trunc(Number(value) || 0)) })}
+        />
         <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
           Si activas mantenimiento, los clientes verán una pantalla cerrada y solo quedará disponible el inicio de sesión del administrador.
         </p>
@@ -3382,13 +3546,16 @@ function OrderTotals({
   total,
   zone,
   deliveryEnabled,
+  minimumOrderAmount,
 }: {
   subtotal: number;
   delivery: number;
   total: number;
   zone: { name: string; eta: string };
   deliveryEnabled: boolean;
+  minimumOrderAmount: number;
 }) {
+  const missingMinimum = Math.max(0, minimumOrderAmount - subtotal);
   return (
     <div className="mt-4 rounded-lg bg-neutral-100 p-4">
       <div className="flex items-center justify-between text-sm font-bold text-neutral-600">
@@ -3407,6 +3574,13 @@ function OrderTotals({
         <span>Total</span>
         <span>{formatCurrency(total)}</span>
       </div>
+      {minimumOrderAmount > 0 ? (
+        <div className={`mt-3 rounded-lg px-3 py-2 text-xs font-black ${missingMinimum > 0 ? "bg-amber-100 text-amber-900" : "bg-green-100 text-green-800"}`}>
+          {missingMinimum > 0
+            ? `Monto minimo: ${formatCurrency(minimumOrderAmount)}. Te faltan ${formatCurrency(missingMinimum)}.`
+            : `Monto minimo alcanzado: ${formatCurrency(minimumOrderAmount)}.`}
+        </div>
+      ) : null}
     </div>
   );
 }

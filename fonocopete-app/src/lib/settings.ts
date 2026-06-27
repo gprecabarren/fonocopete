@@ -24,6 +24,7 @@ export const defaultSettings: SiteSettings = {
   deliveryEnabled: true,
   addressSearchEnabled: false,
   advancePaymentEnabled: true,
+  minimumOrderAmount: 0,
   maintenanceMessage:
     "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Inténtalo nuevamente más tarde.",
   whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56989351855",
