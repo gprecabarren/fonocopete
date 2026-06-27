@@ -842,9 +842,10 @@ function hasOnlyAddressCharacters(address: string) {
   return sanitizeAddressValue(address) === address;
 }
 
-function resizeImage(file: File) {
+function resizeImageSource(src: string) {
   return new Promise<string>((resolve, reject) => {
     const image = new Image();
+    if (!src.startsWith("data:")) image.crossOrigin = "anonymous";
     image.onload = () => {
       const canvas = document.createElement("canvas");
       const targetWidth = 1200;
@@ -868,10 +869,24 @@ function resizeImage(file: File) {
       const sourceY = (image.height - sourceHeight) / 2;
 
       context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
-      resolve(canvas.toDataURL("image/jpeg", 0.9));
+      try {
+        resolve(canvas.toDataURL("image/jpeg", 0.9));
+      } catch {
+        reject(new Error("La imagen no permite optimizacion"));
+      }
     };
     image.onerror = () => reject(new Error("Imagen invalida"));
-    image.src = URL.createObjectURL(file);
+    image.src = src;
+  });
+}
+
+function resizeImage(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const sourceUrl = URL.createObjectURL(file);
+    resizeImageSource(sourceUrl)
+      .then(resolve)
+      .catch(reject)
+      .finally(() => URL.revokeObjectURL(sourceUrl));
   });
 }
 
@@ -2242,6 +2257,8 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   const [productView, setProductView] = useState("__latest");
   const [adminProductQuery, setAdminProductQuery] = useState("");
   const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
+  const [optimizeStatus, setOptimizeStatus] = useState("");
+  const [optimizingImages, setOptimizingImages] = useState(false);
   const categoryIds = useMemo(() => new Set(props.categories.map((category) => category.id)), [props.categories]);
   const uncategorizedProducts = props.products.filter((product) => !categoryIds.has(product.category));
   const featuredAdminProducts = props.products.filter((product) => product.featured);
@@ -2279,6 +2296,33 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
         [productView]: nextIds,
       },
     });
+  }
+
+  async function optimizeCurrentImages() {
+    if (!props.products.length || optimizingImages) return;
+    if (!window.confirm("Optimizar las imagenes actuales puede tardar un poco. ¿Continuar?")) return;
+    setOptimizingImages(true);
+    setOptimizeStatus("Procesando imagenes...");
+    let optimized = 0;
+    let failed = 0;
+    for (const product of props.products) {
+      try {
+        const imageUrl = await resizeImageSource(product.imageUrl);
+        const nextProduct = { ...product, imageUrl };
+        props.updateProduct(product.id, () => nextProduct);
+        await props.onSaveProduct(nextProduct);
+        optimized += 1;
+      } catch {
+        failed += 1;
+      }
+      setOptimizeStatus(`Procesadas ${optimized + failed}/${props.products.length}`);
+    }
+    setOptimizeStatus(
+      failed
+        ? `Listo: ${optimized} imagenes optimizadas. ${failed} no se pudieron procesar por permisos o URL invalida.`
+        : `Listo: ${optimized} imagenes optimizadas.`,
+    );
+    setOptimizingImages(false);
   }
 
   return (
@@ -2338,6 +2382,18 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
           <div className="mb-3">
             <h3 className="text-lg font-black">Productos subidos</h3>
             <p className="text-sm font-semibold text-neutral-600">Edita por categoría o revisa los últimos productos agregados.</p>
+          </div>
+          <div className="mb-3 rounded-lg border border-neutral-200 bg-white p-3">
+            <button
+              type="button"
+              disabled={optimizingImages || !props.products.length}
+              onClick={() => void optimizeCurrentImages()}
+              className="action-button flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 px-3 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Upload size={17} />
+              {optimizingImages ? "Optimizando imagenes..." : "Optimizar imagenes actuales"}
+            </button>
+            {optimizeStatus ? <p className="mt-2 text-xs font-bold text-neutral-600">{optimizeStatus}</p> : null}
           </div>
           <label className="mb-3 block">
             <span className="sr-only">Buscar producto subido</span>
