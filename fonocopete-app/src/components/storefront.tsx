@@ -14,6 +14,7 @@ import {
   ClipboardList,
   Copy,
   CreditCard,
+  Crop,
   Download,
   Eye,
   EyeOff,
@@ -62,6 +63,7 @@ const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
 type AdminView = "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings" | "seo" | "analytics";
 type ProductSortMode = "manual" | "price_asc" | "price_desc";
+type ImageCropOptions = { zoom: number; offsetX: number; offsetY: number };
 type AnalyticsRange = "day" | "month" | "year";
 type AnalyticsSummary = {
   range: AnalyticsRange;
@@ -843,10 +845,10 @@ function hasOnlyAddressCharacters(address: string) {
   return sanitizeAddressValue(address) === address;
 }
 
-function resizeImageSource(src: string) {
+function resizeImageSource(src: string, crop: ImageCropOptions = { zoom: 1, offsetX: 0, offsetY: 0 }) {
   return new Promise<string>((resolve, reject) => {
     const image = new Image();
-    if (!src.startsWith("data:")) image.crossOrigin = "anonymous";
+    if (!src.startsWith("data:") && !src.startsWith("blob:")) image.crossOrigin = "anonymous";
     image.onload = () => {
       const canvas = document.createElement("canvas");
       const targetWidth = 1200;
@@ -864,10 +866,15 @@ function resizeImageSource(src: string) {
 
       const sourceRatio = image.width / image.height;
       const targetRatio = targetWidth / targetHeight;
-      const sourceWidth = sourceRatio > targetRatio ? image.height * targetRatio : image.width;
-      const sourceHeight = sourceRatio > targetRatio ? image.height : image.width / targetRatio;
-      const sourceX = (image.width - sourceWidth) / 2;
-      const sourceY = (image.height - sourceHeight) / 2;
+      const baseSourceWidth = sourceRatio > targetRatio ? image.height * targetRatio : image.width;
+      const baseSourceHeight = sourceRatio > targetRatio ? image.height : image.width / targetRatio;
+      const zoom = Math.min(2.5, Math.max(1, crop.zoom || 1));
+      const sourceWidth = baseSourceWidth / zoom;
+      const sourceHeight = baseSourceHeight / zoom;
+      const maxSourceX = Math.max(0, image.width - sourceWidth);
+      const maxSourceY = Math.max(0, image.height - sourceHeight);
+      const sourceX = Math.min(maxSourceX, Math.max(0, maxSourceX / 2 + (crop.offsetX / 100) * (maxSourceX / 2)));
+      const sourceY = Math.min(maxSourceY, Math.max(0, maxSourceY / 2 + (crop.offsetY / 100) * (maxSourceY / 2)));
 
       context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
       try {
@@ -878,16 +885,6 @@ function resizeImageSource(src: string) {
     };
     image.onerror = () => reject(new Error("Imagen invalida"));
     image.src = src;
-  });
-}
-
-function resizeImage(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const sourceUrl = URL.createObjectURL(file);
-    resizeImageSource(sourceUrl)
-      .then(resolve)
-      .catch(reject)
-      .finally(() => URL.revokeObjectURL(sourceUrl));
   });
 }
 
@@ -3683,33 +3680,144 @@ function Textarea(props: { label: string; value: string; onChange: (value: strin
 
 function ImagePicker({ label, onImage }: { label: string; onImage: (imageUrl: string) => void }) {
   const [status, setStatus] = useState("");
+  const [cropSource, setCropSource] = useState<string | null>(null);
 
-  async function handleFile(file?: File) {
+  function handleFile(file?: File) {
     if (!file) return;
+    if (cropSource) URL.revokeObjectURL(cropSource);
+    setCropSource(URL.createObjectURL(file));
+    setStatus("Ajusta el recorte antes de guardar.");
+  }
+
+  function closeCropEditor() {
+    if (cropSource) URL.revokeObjectURL(cropSource);
+    setCropSource(null);
+  }
+
+  async function applyCrop(crop: ImageCropOptions) {
+    if (!cropSource) return;
     setStatus("Procesando imagen...");
     try {
-      const imageUrl = await resizeImage(file);
+      const imageUrl = await resizeImageSource(cropSource, crop);
       onImage(imageUrl);
-      setStatus("Imagen cargada y ajustada a 4:3");
+      setStatus("Imagen cargada y ajustada a 1200 x 900 px");
+      closeCropEditor();
     } catch {
       setStatus("No se pudo cargar la imagen");
     }
   }
 
   return (
-    <label className="grid min-w-0 gap-1 text-sm font-bold">
-      {label}
-      <span className="flex min-h-11 w-full min-w-0 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg border border-dashed border-neutral-400 bg-white px-3 text-sm font-black text-neutral-700">
-        <Upload size={17} className="shrink-0" />
-        <span className="min-w-0 truncate">Seleccionar archivo</span>
-        <input
-          type="file"
-          accept="image/*"
-          className="sr-only"
-          onChange={(event) => void handleFile(event.target.files?.[0])}
-        />
+    <>
+      <label className="grid min-w-0 gap-1 text-sm font-bold">
+        {label}
+        <span className="text-xs font-semibold text-neutral-500">Ideal: 1200 x 900 px, proporcion 4:3.</span>
+        <span className="flex min-h-11 w-full min-w-0 cursor-pointer items-center justify-center gap-2 overflow-hidden rounded-lg border border-dashed border-neutral-400 bg-white px-3 text-sm font-black text-neutral-700">
+          <Upload size={17} className="shrink-0" />
+          <span className="min-w-0 truncate">Seleccionar archivo</span>
+          <input
+            type="file"
+            accept="image/*"
+            className="sr-only"
+            onChange={(event) => handleFile(event.target.files?.[0])}
+          />
+        </span>
+        {status ? <span className="text-xs font-semibold text-neutral-500">{status}</span> : null}
+      </label>
+      {cropSource ? <ImageCropDialog src={cropSource} onCancel={closeCropEditor} onApply={(crop) => void applyCrop(crop)} /> : null}
+    </>
+  );
+}
+
+function ImageCropDialog({
+  src,
+  onCancel,
+  onApply,
+}: {
+  src: string;
+  onCancel: () => void;
+  onApply: (crop: ImageCropOptions) => void;
+}) {
+  const [crop, setCrop] = useState<ImageCropOptions>({ zoom: 1, offsetX: 0, offsetY: 0 });
+
+  return (
+    <div className="fixed inset-0 z-[90] grid place-items-center overflow-y-auto bg-neutral-950/80 px-4 py-6 backdrop-blur">
+      <div className="w-full max-w-2xl rounded-lg bg-white p-4 shadow-2xl">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div>
+            <h3 className="flex items-center gap-2 text-xl font-black">
+              <Crop size={20} />
+              Ajustar imagen
+            </h3>
+            <p className="mt-1 text-sm font-semibold text-neutral-500">Mueve y acerca la foto para que quede bien en el catalogo.</p>
+          </div>
+          <button type="button" onClick={onCancel} className="grid size-10 place-items-center rounded-lg bg-neutral-100" aria-label="Cerrar">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100">
+          <div className="relative aspect-[4/3] overflow-hidden">
+            <img
+              src={src}
+              alt=""
+              className="h-full w-full object-cover"
+              style={{
+                transform: `translate(${crop.offsetX * 0.4}%, ${crop.offsetY * 0.4}%) scale(${crop.zoom})`,
+                transformOrigin: "center",
+              }}
+            />
+            <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-black/10" />
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3">
+          <RangeControl label="Zoom" min={1} max={2.5} step={0.05} value={crop.zoom} onChange={(zoom) => setCrop({ ...crop, zoom })} />
+          <RangeControl label="Mover horizontal" min={-100} max={100} step={1} value={crop.offsetX} onChange={(offsetX) => setCrop({ ...crop, offsetX })} />
+          <RangeControl label="Mover vertical" min={-100} max={100} step={1} value={crop.offsetY} onChange={(offsetY) => setCrop({ ...crop, offsetY })} />
+        </div>
+        <div className="mt-5 grid gap-2 sm:grid-cols-2">
+          <button type="button" onClick={onCancel} className="action-button h-11 rounded-lg border border-neutral-300 bg-white text-sm font-black">
+            Cancelar
+          </button>
+          <button type="button" onClick={() => onApply(crop)} className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
+            <Save size={17} />
+            Guardar recorte
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RangeControl({
+  label,
+  min,
+  max,
+  step,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="grid gap-1 text-sm font-bold">
+      <span className="flex items-center justify-between gap-3">
+        {label}
+        <span className="text-xs font-black text-neutral-500">{value.toFixed(step < 1 ? 2 : 0)}</span>
       </span>
-      {status ? <span className="text-xs font-semibold text-neutral-500">{status}</span> : null}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="w-full accent-red-600"
+      />
     </label>
   );
 }
