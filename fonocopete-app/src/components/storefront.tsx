@@ -3888,7 +3888,7 @@ function OrderTotals({
       {minimumOrderAmount > 0 ? (
         <div className={`mt-3 rounded-lg px-3 py-2 text-xs font-black ${missingMinimum > 0 ? "bg-amber-100 text-amber-900" : "bg-green-100 text-green-800"}`}>
           {missingMinimum > 0
-            ? `Monto minimo: ${formatCurrency(minimumOrderAmount)}. Te faltan ${formatCurrency(missingMinimum)}.`
+            ? `Monto minimo: ${formatCurrency(minimumOrderAmount)}.${missingMinimum < minimumOrderAmount ? ` Te faltan ${formatCurrency(missingMinimum)}.` : ""}`
             : `Monto minimo alcanzado: ${formatCurrency(minimumOrderAmount)}.`}
         </div>
       ) : null}
