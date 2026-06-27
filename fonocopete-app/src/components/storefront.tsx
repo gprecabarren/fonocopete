@@ -1721,10 +1721,10 @@ function AdminPanel(props: {
             <SegmentButton active={props.adminView === "catalog"} onClick={() => props.setAdminView("catalog")}>Catálogo</SegmentButton>
             <SegmentButton active={props.adminView === "categories"} onClick={() => props.setAdminView("categories")}>Categorías</SegmentButton>
             <SegmentButton active={props.adminView === "zones"} onClick={() => props.setAdminView("zones")}>Zonas</SegmentButton>
-            <SegmentButton active={props.adminView === "faqs"} onClick={() => props.setAdminView("faqs")}>FAQ</SegmentButton>
             <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
             <SegmentButton active={props.adminView === "seo"} onClick={() => props.setAdminView("seo")}>SEO</SegmentButton>
-            <SegmentButton active={props.adminView === "analytics"} onClick={() => props.setAdminView("analytics")}>Visitas</SegmentButton>
+            <SegmentButton active={props.adminView === "faqs"} onClick={() => props.setAdminView("faqs")}>FAQ</SegmentButton>
+            <SegmentButton active={false} disabled onClick={() => undefined}>Visitas (Beta)</SegmentButton>
             <button type="button" onClick={() => void logout()} className="flex h-10 items-center gap-2 rounded-lg border border-neutral-300 px-3 text-sm font-black">
               <LogOut size={16} />
               Salir
