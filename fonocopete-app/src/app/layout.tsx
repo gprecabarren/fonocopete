@@ -63,9 +63,9 @@ export async function generateMetadata(): Promise<Metadata> {
       description: seo.ogDescription,
       images: [
         {
-          url: "/fonocopete-logo-circle.jpg",
-          width: 900,
-          height: 900,
+          url: `${siteUrl}/opengraph-image?v=logo-1`,
+          width: 1200,
+          height: 630,
           alt: "Fonocopete Concepcion",
         },
       ],
@@ -74,7 +74,7 @@ export async function generateMetadata(): Promise<Metadata> {
       card: "summary_large_image",
       title: seo.twitterTitle,
       description: seo.twitterDescription,
-      images: ["/fonocopete-logo-circle.jpg"],
+      images: [`${siteUrl}/opengraph-image?v=logo-1`],
     },
     category: "Botilleria y delivery de bebidas",
     verification: seo.googleSiteVerification
