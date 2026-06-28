@@ -77,6 +77,11 @@ export async function generateMetadata(): Promise<Metadata> {
       images: ["/fonocopete-logo-circle.jpg"],
     },
     category: "Botilleria y delivery de bebidas",
+    verification: seo.googleSiteVerification
+      ? {
+          google: seo.googleSiteVerification,
+        }
+      : undefined,
     robots: {
       index: true,
       follow: true,

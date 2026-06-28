@@ -115,6 +115,7 @@ export type SeoSettings = {
   twitterTitle: string;
   twitterDescription: string;
   canonicalPath: string;
+  googleSiteVerification: string;
 };
 
 export type AttendanceScheduleDay = {

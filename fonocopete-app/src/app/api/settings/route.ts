@@ -59,6 +59,7 @@ const settingsSchema = z.object({
     twitterTitle: z.string().min(1),
     twitterDescription: z.string().min(1),
     canonicalPath: z.string().min(1),
+    googleSiteVerification: z.string(),
   }),
   faqs: z.array(z.object({
     id: z.string().min(1),

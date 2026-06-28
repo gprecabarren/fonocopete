@@ -3324,6 +3324,7 @@ function SeoAdmin({
       </div>
       <Input label="Open Graph título" value={draft.seo.ogTitle} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, ogTitle: value } })} />
       <Input label="Twitter título" value={draft.seo.twitterTitle} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, twitterTitle: value } })} />
+      <Input label="Google Search Console" value={draft.seo.googleSiteVerification} placeholder="Codigo de verificacion de Google" onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, googleSiteVerification: value } })} />
       <div className="lg:col-span-2">
         <Textarea label="Open Graph descripción" value={draft.seo.ogDescription} onChange={(value) => setDraft({ ...draft, seo: { ...draft.seo, ogDescription: value } })} />
       </div>
