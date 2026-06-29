@@ -285,6 +285,9 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     (safeProductPage - 1) * productsPerCatalogPage,
     safeProductPage * productsPerCatalogPage,
   );
+  const currentCategoryLabel =
+    productCategories.find((category) => category.id === resolvedActiveCategory)?.label || "productos";
+  const catalogCountLabel = getCatalogCountLabel(filteredProducts.length, currentCategoryLabel, activeBeerFormat, query);
   const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden" && knownCategoryIds.has(product.category)).slice(0, 2);
   const visibleProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category)).length;
   const promoProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category) && product.category === "promociones").length;
@@ -778,7 +781,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           <CatalogPagination
             page={safeProductPage}
             totalPages={totalProductPages}
-            totalProducts={filteredProducts.length}
+            countLabel={catalogCountLabel}
             onPage={setCurrentProductPage}
           />
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -795,7 +798,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           <CatalogPagination
             page={safeProductPage}
             totalPages={totalProductPages}
-            totalProducts={filteredProducts.length}
+            countLabel={catalogCountLabel}
             onPage={setCurrentProductPage}
             bottom
           />
@@ -915,6 +918,15 @@ function hasDuplicateProductName(products: Product[], name: string, currentId?: 
 
 function hasInvalidOriginalPrice(product: Pick<Product, "price" | "originalPrice">) {
   return Boolean(product.originalPrice && product.originalPrice <= product.price);
+}
+
+function getCatalogCountLabel(totalProducts: number, categoryLabel: string, beerFormat: "all" | "latas" | "botellas", query: string) {
+  if (normalizeText(query)) return `${totalProducts} resultados`;
+  const cleanCategory = categoryLabel.toLocaleLowerCase("es-CL");
+  if (normalizeText(categoryLabel) === "cervezas" && beerFormat !== "all") {
+    return `${totalProducts} ${beerFormat} de cervezas`;
+  }
+  return `${totalProducts} ${cleanCategory}`;
 }
 
 function hasStreetAndNumber(address: string) {
@@ -1200,61 +1212,86 @@ function CatalogToolbar(props: {
 function CatalogPagination({
   page,
   totalPages,
-  totalProducts,
+  countLabel,
   onPage,
   bottom = false,
 }: {
   page: number;
   totalPages: number;
-  totalProducts: number;
+  countLabel: string;
   onPage: (page: number) => void;
   bottom?: boolean;
 }) {
   if (totalPages <= 1) return null;
   const pageItems = getPaginationItems(page, totalPages);
+  const currentBlockStart = Math.floor((page - 1) / 10) * 10 + 1;
+  const previousBlockPage = Math.max(1, currentBlockStart - 10);
+  const nextBlockPage = Math.min(totalPages, currentBlockStart + 10);
+  const hasPreviousBlock = currentBlockStart > 1;
+  const hasNextBlock = currentBlockStart + 9 < totalPages;
   return (
     <nav
       aria-label={bottom ? "Paginacion inferior del catalogo" : "Paginacion superior del catalogo"}
       className={`${bottom ? "mt-5" : "mb-4"} flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white/70 p-2 sm:flex-row sm:items-center sm:justify-between`}
     >
       <span className="px-1 text-xs font-black uppercase text-neutral-500">
-        {totalProducts} productos
+        {countLabel}
       </span>
       <div className="flex max-w-full items-center gap-1 overflow-x-auto">
-        {pageItems.map((item, index) =>
-          item === "..." ? (
-            <span key={`ellipsis-${index}`} className="grid size-9 shrink-0 place-items-center text-sm font-black text-neutral-400">
-              ...
-            </span>
-          ) : (
-            <button
-              key={item}
-              type="button"
-              onClick={() => onPage(item)}
-              aria-current={item === page ? "page" : undefined}
-              className={`action-button grid size-9 shrink-0 place-items-center rounded-lg text-sm font-black ${
-                item === page ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"
-              }`}
-            >
-              {item}
-            </button>
-          ),
-        )}
+        {totalPages > 10 ? (
+          <button
+            type="button"
+            disabled={!hasPreviousBlock}
+            onClick={() => onPage(previousBlockPage)}
+            className="action-button grid size-9 shrink-0 place-items-center rounded-lg border border-neutral-300 bg-white text-sm font-black text-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-300"
+            aria-label="Paginas anteriores"
+          >
+            ‹
+          </button>
+        ) : null}
+        {pageItems.map((item) => (
+          <button
+            key={item.page}
+            type="button"
+            disabled={item.disabled}
+            onClick={() => onPage(item.page)}
+            aria-current={item.page === page ? "page" : undefined}
+            className={`action-button grid size-9 shrink-0 place-items-center rounded-lg text-sm font-black disabled:cursor-not-allowed ${
+              item.disabled
+                ? "border border-neutral-200 bg-neutral-100 text-neutral-300"
+                : item.page === page
+                  ? "bg-neutral-950 text-white"
+                  : "border border-neutral-300 bg-white text-neutral-700"
+            }`}
+          >
+            {item.page}
+          </button>
+        ))}
+        {totalPages > 10 ? (
+          <button
+            type="button"
+            disabled={!hasNextBlock}
+            onClick={() => onPage(nextBlockPage)}
+            className="action-button grid size-9 shrink-0 place-items-center rounded-lg border border-neutral-300 bg-white text-sm font-black text-neutral-700 disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-300"
+            aria-label="Paginas siguientes"
+          >
+            ›
+          </button>
+        ) : null}
       </div>
     </nav>
   );
 }
 
 function getPaginationItems(page: number, totalPages: number) {
-  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
-  const items: Array<number | "..."> = [1];
-  const start = Math.max(2, page - 1);
-  const end = Math.min(totalPages - 1, page + 1);
-  if (start > 2) items.push("...");
-  for (let item = start; item <= end; item += 1) items.push(item);
-  if (end < totalPages - 1) items.push("...");
-  items.push(totalPages);
-  return items;
+  const blockStart = Math.floor((page - 1) / 10) * 10 + 1;
+  return Array.from({ length: 10 }, (_, index) => {
+    const itemPage = blockStart + index;
+    return {
+      page: itemPage,
+      disabled: itemPage > totalPages,
+    };
+  });
 }
 
 function BusinessStatusSign({ isAttending }: { isAttending: boolean }) {
