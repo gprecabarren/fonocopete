@@ -61,6 +61,8 @@ import type {
 const catalogStorageKey = "fonocopete.catalog";
 const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
+const autoAdminDescription = "Producto cargado desde administracion.";
+const productsPerCatalogPage = 15;
 type AdminView = "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings" | "seo" | "analytics";
 type ProductSortMode = "manual" | "price_asc" | "price_desc";
 type ImageCropOptions = { zoom: number; offsetX: number; offsetY: number };
@@ -121,13 +123,14 @@ const productDraft: Product = {
 };
 
 export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
-  const [products, setProducts] = useState<Product[]>(() => readLocal(catalogStorageKey, initialProducts));
+  const [products, setProducts] = useState<Product[]>(() => cleanProducts(readLocal(catalogStorageKey, initialProducts)));
   const [productCategories, setProductCategories] = useState<ProductCategory[]>(categories);
   const [settings, setSettings] = useState<SiteSettings>(() => mergeSettings(readLocal(settingsStorageKey, defaultSettings)));
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<CategoryId>("promociones");
   const [activeBeerFormat, setActiveBeerFormat] = useState<"all" | "latas" | "botellas">("all");
   const [productSortMode, setProductSortMode] = useState<ProductSortMode>("manual");
+  const [currentProductPage, setCurrentProductPage] = useState(1);
   const [query, setQuery] = useState("");
   const [customer, setCustomer] = useState<CustomerDetails>(emptyCustomer);
   const [orderStatus, setOrderStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -158,6 +161,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     paymentMethod?: OrderPayload["paymentMethod"];
   } | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
+  const [bootingStore, setBootingStore] = useState(mode === "store");
 
   useEffect(() => {
     if (productSource === "local") window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
@@ -195,7 +199,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         const data = (await productResponse.value.json()) as { products: Product[]; source: "demo" | "supabase" };
         if (data.source === "supabase") {
           setProductSource("supabase");
-          setProducts(data.products.length ? data.products : initialProducts);
+          setProducts(cleanProducts(data.products.length ? data.products : initialProducts));
         }
       }
 
@@ -236,6 +240,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           }));
         }
       }
+
+      setBootingStore(false);
     }
 
     void boot();
@@ -273,6 +279,12 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     });
     return sortCatalogProducts(matchingProducts, productSortMode, settings.productOrder);
   }, [products, knownCategoryIds, resolvedActiveCategory, activeBeerFormat, query, productSortMode, settings.productOrder]);
+  const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / productsPerCatalogPage));
+  const safeProductPage = Math.min(currentProductPage, totalProductPages);
+  const paginatedProducts = filteredProducts.slice(
+    (safeProductPage - 1) * productsPerCatalogPage,
+    safeProductPage * productsPerCatalogPage,
+  );
   const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden" && knownCategoryIds.has(product.category)).slice(0, 2);
   const visibleProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category)).length;
   const promoProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category) && product.category === "promociones").length;
@@ -290,6 +302,26 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   function confirmAge() {
     window.localStorage.setItem(ageStorageKey, "true");
     setAgeConfirmed(true);
+  }
+
+  function updateStoreQuery(value: string) {
+    setQuery(value);
+    setCurrentProductPage(1);
+  }
+
+  function updateStoreCategory(value: CategoryId) {
+    setActiveCategory(value);
+    setCurrentProductPage(1);
+  }
+
+  function updateStoreBeerFormat(value: "all" | "latas" | "botellas") {
+    setActiveBeerFormat(value);
+    setCurrentProductPage(1);
+  }
+
+  function updateStoreSortMode(value: ProductSortMode) {
+    setProductSortMode(value);
+    setCurrentProductPage(1);
   }
 
   function addToCart(product: Product) {
@@ -462,6 +494,10 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   async function persistProducts(nextProducts: Product[]) {
+    if (nextProducts.some(hasInvalidOriginalPrice)) {
+      window.alert("El precio original debe ser mayor que el precio normal.");
+      return nextProducts;
+    }
     setSyncStatus("syncing");
     try {
       const response = await fetch("/api/products", {
@@ -473,7 +509,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       const data = (await response.json()) as { products: Product[]; source: "demo" | "supabase" };
       if (data.source === "supabase") setProductSource("supabase");
       setSyncStatus("saved");
-      return data.products.length ? data.products : nextProducts;
+      return cleanProducts(data.products.length ? data.products : nextProducts);
     } catch {
       setProductSource("local");
       setSyncStatus("error");
@@ -482,6 +518,10 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   async function persistProduct(product: Product) {
+    if (hasInvalidOriginalPrice(product)) {
+      window.alert("El precio original debe ser mayor que el precio normal.");
+      return;
+    }
     setSyncStatus("syncing");
     try {
       const response = await fetch(`/api/products/${product.id}`, {
@@ -509,7 +549,10 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   async function addDraftProduct(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draft.name || draft.price <= 0) return;
-    if (draft.originalPrice && draft.price <= 0) return;
+    if (hasInvalidOriginalPrice(draft)) {
+      window.alert("El precio original debe ser mayor que el precio normal.");
+      return;
+    }
     if (draft.category === "cervezas" && !draft.beerFormat) return;
     if (hasDuplicateProductName(products, draft.name)) {
       window.alert("Ya existe un producto con ese nombre.");
@@ -525,7 +568,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       imageUrl:
         draft.imageUrl ||
         "https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=900&q=80",
-      description: draft.description || "Producto cargado desde administración.",
+      description: draft.description.trim(),
       volume: draft.volume || "Formato por definir",
       originalPrice: draft.originalPrice && draft.price > 0 ? draft.originalPrice : null,
     };
@@ -592,6 +635,10 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     }
   }
 
+  if (mode === "store" && bootingStore) {
+    return <StoreLoading />;
+  }
+
   if (mode === "store" && settings.maintenanceMode) {
     return (
       <MaintenanceScreen
@@ -654,9 +701,16 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       <Header settings={settings} cartCount={cartCount} />
       <FloatingWhatsApp whatsappNumber={settings.whatsappNumber} />
 
-      <section id="promociones" className="scroll-mt-20 bg-neutral-950 text-white">
+      <section id="promociones" className="relative isolate scroll-mt-20 overflow-hidden bg-neutral-950 text-white">
+        <img
+          src="/hero-liquor-bg.jpg"
+          alt=""
+          className="absolute inset-0 -z-20 h-full w-full object-cover object-center opacity-30 sm:object-[70%_center] lg:opacity-38"
+        />
+        <div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(10,10,10,0.96)_0%,rgba(10,10,10,0.88)_42%,rgba(10,10,10,0.7)_100%)]" />
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_75%_20%,rgba(239,68,68,0.18),transparent_34%)]" />
         <div className="mx-auto grid max-w-7xl gap-7 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_0.78fr] lg:py-12">
-          <div className="flex min-w-0 flex-col justify-center">
+          <div className="relative flex min-w-0 flex-col justify-center">
             <div className="mb-5 flex flex-wrap items-center gap-3">
               <div className="inline-flex w-fit items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-semibold text-amber-200">
                 <ShieldCheck size={17} />
@@ -667,7 +721,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
             <h1 className="text-4xl font-black uppercase leading-tight sm:text-6xl">Fonocopete</h1>
             <p className="mt-2 text-xl font-black uppercase text-red-500 sm:text-3xl">Concepción</p>
             <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-300 sm:text-lg">
-              Catálogo vivo, carrito simple y confirmación por WhatsApp para comprar sin pedir PDF.
+              Botillería delivery en Concepción con cervezas, piscos, vinos y promociones.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               <Metric icon={<Beer size={20} />} label="Catálogo" value={`${visibleProductCount} productos · ${promoProductCount} promos`} />
@@ -712,20 +766,39 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         <div className="min-w-0">
           <CatalogToolbar
             query={query}
-            setQuery={setQuery}
+            setQuery={updateStoreQuery}
             activeCategory={resolvedActiveCategory}
-            setActiveCategory={setActiveCategory}
+            setActiveCategory={updateStoreCategory}
             activeBeerFormat={activeBeerFormat}
-            setActiveBeerFormat={setActiveBeerFormat}
+            setActiveBeerFormat={updateStoreBeerFormat}
             productSortMode={productSortMode}
-            setProductSortMode={setProductSortMode}
+            setProductSortMode={updateStoreSortMode}
             categories={productCategories}
           />
+          <CatalogPagination
+            page={safeProductPage}
+            totalPages={totalProductPages}
+            totalProducts={filteredProducts.length}
+            onPage={setCurrentProductPage}
+          />
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {filteredProducts.map((product) => (
-              <ProductCard key={product.id} product={product} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
-            ))}
+            {paginatedProducts.length ? (
+              paginatedProducts.map((product) => (
+                <ProductCard key={product.id} product={product} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
+              ))
+            ) : (
+              <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center text-sm font-bold text-neutral-500 sm:col-span-2 xl:col-span-3">
+                No hay productos disponibles en esta vista.
+              </div>
+            )}
           </div>
+          <CatalogPagination
+            page={safeProductPage}
+            totalPages={totalProductPages}
+            totalProducts={filteredProducts.length}
+            onPage={setCurrentProductPage}
+            bottom
+          />
         </div>
 
         <CheckoutPanel
@@ -768,6 +841,13 @@ function readLocal<T>(key: string, fallback: T): T {
     window.localStorage.removeItem(key);
     return fallback;
   }
+}
+
+function cleanProducts(products: Product[]) {
+  return products.map((product) => ({
+    ...product,
+    description: normalizeText(product.description) === normalizeText(autoAdminDescription) ? "" : product.description,
+  }));
 }
 
 function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
@@ -831,6 +911,10 @@ function hasDuplicateProductName(products: Product[], name: string, currentId?: 
   const cleanName = normalizeText(name);
   if (!cleanName) return false;
   return products.some((product) => product.id !== currentId && normalizeText(product.name) === cleanName);
+}
+
+function hasInvalidOriginalPrice(product: Pick<Product, "price" | "originalPrice">) {
+  return Boolean(product.originalPrice && product.originalPrice <= product.price);
 }
 
 function hasStreetAndNumber(address: string) {
@@ -1111,6 +1195,66 @@ function CatalogToolbar(props: {
       </div>
     </>
   );
+}
+
+function CatalogPagination({
+  page,
+  totalPages,
+  totalProducts,
+  onPage,
+  bottom = false,
+}: {
+  page: number;
+  totalPages: number;
+  totalProducts: number;
+  onPage: (page: number) => void;
+  bottom?: boolean;
+}) {
+  if (totalPages <= 1) return null;
+  const pageItems = getPaginationItems(page, totalPages);
+  return (
+    <nav
+      aria-label={bottom ? "Paginacion inferior del catalogo" : "Paginacion superior del catalogo"}
+      className={`${bottom ? "mt-5" : "mb-4"} flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white/70 p-2 sm:flex-row sm:items-center sm:justify-between`}
+    >
+      <span className="px-1 text-xs font-black uppercase text-neutral-500">
+        {totalProducts} productos
+      </span>
+      <div className="flex max-w-full items-center gap-1 overflow-x-auto">
+        {pageItems.map((item, index) =>
+          item === "..." ? (
+            <span key={`ellipsis-${index}`} className="grid size-9 shrink-0 place-items-center text-sm font-black text-neutral-400">
+              ...
+            </span>
+          ) : (
+            <button
+              key={item}
+              type="button"
+              onClick={() => onPage(item)}
+              aria-current={item === page ? "page" : undefined}
+              className={`action-button grid size-9 shrink-0 place-items-center rounded-lg text-sm font-black ${
+                item === page ? "bg-neutral-950 text-white" : "border border-neutral-300 bg-white text-neutral-700"
+              }`}
+            >
+              {item}
+            </button>
+          ),
+        )}
+      </div>
+    </nav>
+  );
+}
+
+function getPaginationItems(page: number, totalPages: number) {
+  if (totalPages <= 7) return Array.from({ length: totalPages }, (_, index) => index + 1);
+  const items: Array<number | "..."> = [1];
+  const start = Math.max(2, page - 1);
+  const end = Math.min(totalPages - 1, page + 1);
+  if (start > 2) items.push("...");
+  for (let item = start; item <= end; item += 1) items.push(item);
+  if (end < totalPages - 1) items.push("...");
+  items.push(totalPages);
+  return items;
 }
 
 function BusinessStatusSign({ isAttending }: { isAttending: boolean }) {
@@ -2297,8 +2441,12 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   const categoryIds = useMemo(() => new Set(props.categories.map((category) => category.id)), [props.categories]);
   const uncategorizedProducts = props.products.filter((product) => !categoryIds.has(product.category));
   const featuredAdminProducts = props.products.filter((product) => product.featured);
+  const availableAdminProducts = props.products.filter((product) => product.stock === "available");
+  const lowStockAdminProducts = props.products.filter((product) => product.stock === "low");
+  const soldOutAdminProducts = props.products.filter((product) => product.stock === "sold_out");
+  const hiddenAdminProducts = props.products.filter((product) => product.stock === "hidden");
   const orderableProductsInView =
-    productView !== "__latest" && productView !== "__uncategorized" && productView !== "__featured"
+    !productView.startsWith("__") && productView !== "__latest" && productView !== "__uncategorized" && productView !== "__featured"
       ? sortCatalogProducts(props.products.filter((product) => product.category === productView && product.stock !== "hidden" && product.stock !== "sold_out"), "manual", props.settings.productOrder)
       : [];
   const baseAdminProducts =
@@ -2306,6 +2454,14 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
       ? props.products.slice(0, 5)
       : productView === "__featured"
         ? featuredAdminProducts
+      : productView === "__available"
+        ? availableAdminProducts
+      : productView === "__low"
+        ? lowStockAdminProducts
+      : productView === "__sold_out"
+        ? soldOutAdminProducts
+      : productView === "__hidden"
+        ? hiddenAdminProducts
       : productView === "__uncategorized"
         ? uncategorizedProducts
         : sortCatalogProducts(props.products.filter((product) => product.category === productView), "manual", props.settings.productOrder);
@@ -2317,7 +2473,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
     : baseAdminProducts;
 
   async function moveProductInCategory(productId: string, direction: -1 | 1) {
-    if (productView === "__latest" || productView === "__uncategorized") return;
+    if (productView.startsWith("__")) return;
     const ids = orderableProductsInView.map((product) => product.id);
     const index = ids.indexOf(productId);
     const nextIndex = index + direction;
@@ -2449,6 +2605,18 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             <CatalogFilterButton active={productView === "__featured"} onClick={() => setProductView("__featured")}>
               Destacados ({featuredAdminProducts.length})
             </CatalogFilterButton>
+            <CatalogFilterButton active={productView === "__available"} onClick={() => setProductView("__available")}>
+              Activos ({availableAdminProducts.length})
+            </CatalogFilterButton>
+            <CatalogFilterButton active={productView === "__low"} onClick={() => setProductView("__low")}>
+              Bajo stock ({lowStockAdminProducts.length})
+            </CatalogFilterButton>
+            <CatalogFilterButton active={productView === "__sold_out"} onClick={() => setProductView("__sold_out")}>
+              Agotados ({soldOutAdminProducts.length})
+            </CatalogFilterButton>
+            <CatalogFilterButton active={productView === "__hidden"} onClick={() => setProductView("__hidden")}>
+              Ocultos ({hiddenAdminProducts.length})
+            </CatalogFilterButton>
             {props.categories.map((category) => (
               <CatalogFilterButton key={category.id} active={productView === category.id} onClick={() => setProductView(category.id)}>
                 {category.label} ({props.products.filter((product) => product.category === category.id).length})
@@ -2467,7 +2635,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               products={props.products}
               categories={props.categories}
               categoryIds={categoryIds}
-              orderControls={!cleanAdminProductQuery && productView !== "__latest" && productView !== "__featured" && productView !== "__uncategorized" && product.stock !== "hidden" && product.stock !== "sold_out" ? {
+              orderControls={!cleanAdminProductQuery && !productView.startsWith("__") && product.stock !== "hidden" && product.stock !== "sold_out" ? {
                 canMoveUp: orderableProductsInView.findIndex((item) => item.id === product.id) > 0,
                 canMoveDown: orderableProductsInView.findIndex((item) => item.id === product.id) !== -1 && orderableProductsInView.findIndex((item) => item.id === product.id) < orderableProductsInView.length - 1,
                 onMoveUp: () => void moveProductInCategory(product.id, -1),
@@ -2526,6 +2694,10 @@ function ProductAdminCard({
     }
     if (nextProduct.price <= 0) {
       window.alert("Ingresa un precio normal antes de guardar.");
+      return;
+    }
+    if (hasInvalidOriginalPrice(nextProduct)) {
+      window.alert("El precio original debe ser mayor que el precio normal.");
       return;
     }
     if (hasDuplicateProductName(products, nextProduct.name, nextProduct.id)) {
@@ -2623,14 +2795,17 @@ function ProductAdminCard({
             onChange={(event) => update({ ...product, volume: event.target.value })}
             className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold"
           />
-          <StockSelect
-            value={product.stock}
-            onChange={(stock) => {
-              const nextProduct = { ...product, stock };
-              update(nextProduct);
-              void onSaveProduct(nextProduct);
-            }}
-          />
+          <label className="grid gap-1 text-xs font-black uppercase text-neutral-500">
+            Estado del producto
+            <StockSelect
+              value={product.stock}
+              onChange={(stock) => {
+                const nextProduct = { ...product, stock };
+                update(nextProduct);
+                void onSaveProduct(nextProduct);
+              }}
+            />
+          </label>
           <button
             type="button"
             onClick={() => {
@@ -3412,6 +3587,20 @@ function BooleanControl({
         </button>
       </div>
     </fieldset>
+  );
+}
+
+function StoreLoading() {
+  return (
+    <main className="grid min-h-screen place-items-center bg-neutral-950 px-4 text-white">
+      <div className="grid justify-items-center gap-4 text-center">
+        <img src="/fonocopete-logo-circle.jpg" alt="" className="size-20 rounded-full border border-white/20 object-cover" />
+        <div>
+          <p className="text-2xl font-black uppercase">Fonocopete</p>
+          <p className="mt-1 text-sm font-black uppercase tracking-[0.22em] text-red-400">Cargando catalogo</p>
+        </div>
+      </div>
+    </main>
   );
 }
 

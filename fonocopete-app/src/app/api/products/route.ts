@@ -5,19 +5,29 @@ import { mapProductRow, mapProductToRow } from "@/lib/product-mapper";
 import type { Product } from "@/lib/types";
 import { requireAdmin } from "@/lib/auth";
 
-const productSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  category: z.string().min(1),
-  price: z.number().int().nonnegative(),
-  originalPrice: z.number().int().nonnegative().nullable().optional(),
-  beerFormat: z.enum(["latas", "botellas"]).nullable().optional(),
-  imageUrl: z.string(),
-  volume: z.string(),
-  description: z.string(),
-  stock: z.enum(["available", "low", "sold_out", "hidden"]),
-  featured: z.boolean().optional(),
-});
+const productSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    category: z.string().min(1),
+    price: z.number().int().nonnegative(),
+    originalPrice: z.number().int().nonnegative().nullable().optional(),
+    beerFormat: z.enum(["latas", "botellas"]).nullable().optional(),
+    imageUrl: z.string(),
+    volume: z.string(),
+    description: z.string(),
+    stock: z.enum(["available", "low", "sold_out", "hidden"]),
+    featured: z.boolean().optional(),
+  })
+  .superRefine((product, context) => {
+    if (product.originalPrice && product.originalPrice <= product.price) {
+      context.addIssue({
+        code: "custom",
+        path: ["originalPrice"],
+        message: "El precio original debe ser mayor que el precio normal.",
+      });
+    }
+  });
 
 export async function GET() {
   const supabase = createServerSupabaseClient();
