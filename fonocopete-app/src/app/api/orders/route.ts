@@ -26,6 +26,8 @@ const orderSchema = z.object({
     }),
   ),
   subtotal: z.number().nonnegative(),
+  discount: z.number().nonnegative(),
+  couponCode: z.string().optional(),
   delivery: z.number().nonnegative(),
   total: z.number().nonnegative(),
   zoneName: z.string(),
@@ -62,6 +64,8 @@ export async function GET() {
       addressExtra: order.address_extra,
       zoneName: order.zone_name,
       subtotal: order.subtotal,
+      discount: order.discount || 0,
+      couponCode: order.coupon_code || "",
       delivery: order.delivery,
       total: order.total,
       paymentMethod: order.payment_method,
@@ -111,6 +115,8 @@ export async function POST(request: Request) {
         manual_address: order.customer.manualAddress,
         zone_name: order.zoneName,
         subtotal: order.subtotal,
+        discount: order.discount,
+        coupon_code: order.couponCode || null,
         delivery: order.delivery,
         total: order.total,
         payment_method: order.paymentMethod,
@@ -153,7 +159,7 @@ export async function POST(request: Request) {
   const itemRows = order.items.map((item) => `${item.quantity}x ${item.name} - $${item.lineTotal}`).join("<br />");
 
   await transporter.sendMail({
-    from: `"Fonocopete MAVERIK" <${gmailUser}>`,
+    from: `"Fonocopete Concepción" <${gmailUser}>`,
     to: ownerEmail,
     subject: `Nuevo pedido Fonocopete - ${order.customer.name}`,
     html: `
@@ -165,19 +171,21 @@ export async function POST(request: Request) {
       <p><strong>Complemento:</strong> ${order.customer.addressExtra || "Sin complemento"}</p>
       <p><strong>Zona:</strong> ${order.zoneName}</p>
       <p>${itemRows}</p>
+      <p><strong>Descuento:</strong> $${order.discount}</p>
       <p><strong>Total:</strong> $${order.total}</p>
       <p><strong>Notas:</strong> ${order.customer.notes || "Sin notas"}</p>
     `,
   });
 
   await transporter.sendMail({
-    from: `"Fonocopete MAVERIK" <${gmailUser}>`,
+    from: `"Fonocopete Concepción" <${gmailUser}>`,
     to: order.customer.email,
     subject: "Confirmación de pedido Fonocopete",
     html: `
       <h1>Recibimos tu pedido</h1>
       <p>Hola ${order.customer.name}, tu pedido fue enviado a la botillería para confirmación.</p>
       <p>${itemRows}</p>
+      <p><strong>Descuento:</strong> $${order.discount}</p>
       <p><strong>Total:</strong> $${order.total}</p>
       <p>Si aún no pagaste, usa este enlace: <a href="${order.paymentLink}">Mercado Pago</a>.</p>
     `,

@@ -58,7 +58,7 @@ export async function generateMetadata(): Promise<Metadata> {
       type: "website",
       locale: "es_CL",
       url: seo.canonicalPath || "/",
-      siteName: "Fonocopete Concepcion",
+      siteName: "Fonocopete Concepción",
       title: seo.ogTitle,
       description: seo.ogDescription,
       images: [
@@ -66,7 +66,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: `${siteUrl}/opengraph-image?v=logo-1`,
           width: 1200,
           height: 630,
-          alt: "Fonocopete Concepcion",
+          alt: "Fonocopete Concepción",
         },
       ],
     },
@@ -76,7 +76,7 @@ export async function generateMetadata(): Promise<Metadata> {
       description: seo.twitterDescription,
       images: [`${siteUrl}/opengraph-image?v=logo-1`],
     },
-    category: "Botilleria y delivery de bebidas",
+    category: "Botillería y delivery de bebidas",
     verification: seo.googleSiteVerification
       ? {
           google: seo.googleSiteVerification,

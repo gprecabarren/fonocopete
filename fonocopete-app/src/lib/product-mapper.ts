@@ -4,6 +4,7 @@ type ProductRow = {
   id: string;
   name: string;
   category_id: Product["category"];
+  secondary_category_id?: Product["secondaryCategory"];
   price: number;
   original_price: number | null;
   beer_format: Product["beerFormat"];
@@ -19,6 +20,7 @@ export function mapProductRow(row: ProductRow): Product {
     id: row.id,
     name: row.name,
     category: row.category_id,
+    secondaryCategory: row.secondary_category_id || null,
     price: row.price,
     originalPrice: row.original_price,
     beerFormat: row.beer_format,
@@ -35,9 +37,10 @@ export function mapProductToRow(product: Product) {
     id: product.id,
     name: product.name,
     category_id: product.category,
+    secondary_category_id: product.secondaryCategory || null,
     price: product.price,
     original_price: product.originalPrice || null,
-    beer_format: product.category === "cervezas" ? product.beerFormat || null : null,
+    beer_format: product.category === "cervezas" || product.secondaryCategory === "cervezas" ? product.beerFormat || null : null,
     image_url: product.imageUrl,
     volume: product.volume,
     description: product.description,

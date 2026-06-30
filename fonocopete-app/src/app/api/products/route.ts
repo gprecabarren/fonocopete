@@ -10,6 +10,7 @@ const productSchema = z
     id: z.string().min(1),
     name: z.string().min(1),
     category: z.string().min(1),
+    secondaryCategory: z.string().nullable().optional(),
     price: z.number().int().nonnegative(),
     originalPrice: z.number().int().nonnegative().nullable().optional(),
     beerFormat: z.enum(["latas", "botellas"]).nullable().optional(),
@@ -27,6 +28,13 @@ const productSchema = z
         message: "El precio original debe ser mayor que el precio normal.",
       });
     }
+    if (product.secondaryCategory && product.secondaryCategory === product.category) {
+      context.addIssue({
+        code: "custom",
+        path: ["secondaryCategory"],
+        message: "La segunda categoría debe ser distinta.",
+      });
+    }
   });
 
 export async function GET() {
@@ -38,7 +46,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("products")
-    .select("id,name,category_id,price,original_price,beer_format,image_url,volume,description,stock,featured")
+    .select("id,name,category_id,secondary_category_id,price,original_price,beer_format,image_url,volume,description,stock,featured")
     .order("featured", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -70,7 +78,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("products")
     .upsert(products.map(mapProductToRow), { onConflict: "id" })
-    .select("id,name,category_id,price,original_price,beer_format,image_url,volume,description,stock,featured");
+    .select("id,name,category_id,secondary_category_id,price,original_price,beer_format,image_url,volume,description,stock,featured");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

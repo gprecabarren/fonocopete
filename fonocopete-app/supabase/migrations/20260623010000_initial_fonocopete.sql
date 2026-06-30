@@ -85,7 +85,7 @@ insert into public.site_settings (key, value)
 values (
   'main',
   '{
-    "businessName": "Fonocopete MAVERIK",
+    "businessName": "Fonocopete Concepción",
     "maintenanceMode": false,
     "maintenanceMessage": "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Inténtalo nuevamente más tarde.",
     "whatsappNumber": "56989351855",

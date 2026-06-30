@@ -15,7 +15,7 @@ const defaultAttendanceSchedule = [
 ];
 
 export const defaultSettings: SiteSettings = {
-  businessName: "Fonocopete MAVERIK",
+  businessName: "Fonocopete Concepción",
   maintenanceMode: forceMaintenance,
   attendanceStatusEnabled: true,
   isAttending: true,
@@ -34,22 +34,23 @@ export const defaultSettings: SiteSettings = {
   mercadoPagoLink: process.env.NEXT_PUBLIC_MERCADOPAGO_LINK || "https://www.mercadopago.cl/",
   whatsappMessageIntro: "Hola, quiero confirmar este pedido de Fonocopete:",
   seo: {
-    title: "Fonocopete Concepcion | Botilleria y delivery",
-    titleTemplate: "%s | Fonocopete Concepcion",
+    title: "Fonocopete Concepción | Botillería y delivery",
+    titleTemplate: "%s | Fonocopete Concepción",
     description:
-      "Catalogo online de Fonocopete Concepcion. Compra cervezas, piscos, vinos, destilados y promociones con pedidos directos por WhatsApp.",
+      "Catálogo online de Fonocopete Concepción. Compra cervezas, piscos, vinos, destilados y promociones con pedidos directos por WhatsApp.",
     keywords:
-      "Fonocopete Concepcion, botilleria Concepcion, delivery de alcohol Concepcion, licores Concepcion, cervezas Concepcion, piscos Concepcion",
-    ogTitle: "Fonocopete Concepcion | Botilleria y delivery",
+      "Fonocopete Concepción, botillería Concepción, delivery de alcohol Concepción, licores Concepción, cervezas Concepción, piscos Concepción",
+    ogTitle: "Fonocopete Concepción | Botillería y delivery",
     ogDescription:
-      "Cervezas, piscos, vinos, destilados y promociones con pedidos directos por WhatsApp en Concepcion y alrededores.",
-    twitterTitle: "Fonocopete Concepcion | Botilleria y delivery",
+      "Cervezas, piscos, vinos, destilados y promociones con pedidos directos por WhatsApp en Concepción y alrededores.",
+    twitterTitle: "Fonocopete Concepción | Botillería y delivery",
     twitterDescription:
-      "Catalogo de licores y promociones con pedidos directos por WhatsApp en Concepcion.",
+      "Catálogo de licores y promociones con pedidos directos por WhatsApp en Concepción.",
     canonicalPath: "/",
     googleSiteVerification: "",
   },
   faqs: faqs.map((faq, index) => ({ id: `faq-${index + 1}`, ...faq })),
+  coupons: [],
   productOrder: {},
   bankDetails: {
     bank: "Banco de Chile",

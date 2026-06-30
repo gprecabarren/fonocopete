@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { siteUrl } from "@/lib/site";
 
-export const alt = "Fonocopete Concepcion, botilleria y delivery";
+export const alt = "Fonocopete Concepción, botillería y delivery";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -53,7 +53,7 @@ export default function OpenGraphImage() {
               Fonocopete
             </div>
             <div style={{ display: "flex", color: "#dc2626", fontSize: 54, fontWeight: 900, marginTop: "8px" }}>
-              Concepcion
+              Concepción
             </div>
             <div
               style={{
@@ -65,10 +65,10 @@ export default function OpenGraphImage() {
                 letterSpacing: "8px",
               }}
             >
-              BOTILLERIA DELIVERY
+              BOTILLERÍA DELIVERY
             </div>
             <div style={{ display: "flex", marginTop: "22px", fontSize: 25, color: "#404040", lineHeight: 1.35 }}>
-              Catalogo online y pedidos directos por WhatsApp
+              Catálogo online y pedidos directos por WhatsApp
             </div>
           </div>
         </div>

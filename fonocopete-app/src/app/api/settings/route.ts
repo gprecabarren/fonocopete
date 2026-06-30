@@ -16,6 +16,7 @@ function withRuntimeOverrides(settings: SiteSettings) {
     seo: { ...defaultSettings.seo, ...settings.seo },
     attendanceSchedule: settings.attendanceSchedule || defaultSettings.attendanceSchedule,
     productOrder: settings.productOrder || defaultSettings.productOrder,
+    coupons: settings.coupons || defaultSettings.coupons,
     whatsappNumber: ["56939351855", "56912345678"].includes(whatsappDigits)
       ? "56989351855"
       : settings.whatsappNumber,
@@ -65,6 +66,15 @@ const settingsSchema = z.object({
     id: z.string().min(1),
     question: z.string().min(1),
     answer: z.string().min(1),
+  })),
+  coupons: z.array(z.object({
+    id: z.string().min(1),
+    code: z.string().min(1),
+    type: z.enum(["percentage", "fixed"]),
+    value: z.number().int().nonnegative(),
+    active: z.boolean(),
+    minimumSubtotal: z.number().int().nonnegative(),
+    description: z.string(),
   })),
   productOrder: z.record(z.string(), z.array(z.string())),
   bankDetails: z.object({

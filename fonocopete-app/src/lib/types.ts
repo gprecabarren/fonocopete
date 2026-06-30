@@ -10,6 +10,7 @@ export type Product = {
   id: string;
   name: string;
   category: CategoryId;
+  secondaryCategory?: CategoryId | null;
   price: number;
   originalPrice?: number | null;
   beerFormat?: "latas" | "botellas" | null;
@@ -59,6 +60,8 @@ export type OrderPayload = {
   customer: CustomerDetails;
   items: OrderLine[];
   subtotal: number;
+  discount: number;
+  couponCode?: string;
   delivery: number;
   total: number;
   zoneName: string;
@@ -80,6 +83,8 @@ export type SavedOrder = {
   addressExtra: string;
   zoneName: string;
   subtotal: number;
+  discount: number;
+  couponCode: string;
   delivery: number;
   total: number;
   paymentMethod: OrderPayload["paymentMethod"];
@@ -118,6 +123,16 @@ export type SeoSettings = {
   googleSiteVerification: string;
 };
 
+export type Coupon = {
+  id: string;
+  code: string;
+  type: "percentage" | "fixed";
+  value: number;
+  active: boolean;
+  minimumSubtotal: number;
+  description: string;
+};
+
 export type AttendanceScheduleDay = {
   day: number;
   enabled: boolean;
@@ -145,6 +160,7 @@ export type SiteSettings = {
   whatsappMessageIntro: string;
   seo: SeoSettings;
   faqs: FaqItem[];
+  coupons: Coupon[];
   bankDetails: BankDetails;
   productOrder: Record<string, string[]>;
 };

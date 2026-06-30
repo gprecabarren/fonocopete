@@ -47,6 +47,7 @@ import { defaultSettings } from "@/lib/settings";
 import type {
   CartItem,
   CategoryId,
+  Coupon,
   CustomerDetails,
   DeliveryZone,
   FaqItem,
@@ -63,7 +64,7 @@ const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
 const autoAdminDescription = "Producto cargado desde administracion.";
 const productsPerCatalogPage = 15;
-type AdminView = "orders" | "catalog" | "categories" | "zones" | "faqs" | "settings" | "seo" | "analytics";
+type AdminView = "orders" | "catalog" | "categories" | "zones" | "coupons" | "faqs" | "settings" | "seo" | "analytics";
 type ProductSortMode = "manual" | "price_asc" | "price_desc";
 type ImageCropOptions = { zoom: number; offsetX: number; offsetY: number };
 type AnalyticsRange = "day" | "month" | "year";
@@ -113,6 +114,7 @@ const productDraft: Product = {
   id: "",
   name: "",
   category: "promociones",
+  secondaryCategory: null,
   price: 0,
   originalPrice: null,
   beerFormat: null,
@@ -161,7 +163,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     paymentMethod?: OrderPayload["paymentMethod"];
   } | null>(null);
   const [currentTime, setCurrentTime] = useState(() => new Date());
-  const [bootingStore, setBootingStore] = useState(mode === "store");
+  const [couponCode, setCouponCode] = useState("");
+  const [couponStatus, setCouponStatus] = useState("");
 
   useEffect(() => {
     if (productSource === "local") window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
@@ -241,7 +244,6 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         }
       }
 
-      setBootingStore(false);
     }
 
     void boot();
@@ -265,19 +267,20 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
     const matchingProducts = products.filter((product) => {
-      const hasKnownCategory = knownCategoryIds.has(product.category);
-      const matchesCategory = cleanQuery ? true : product.category === resolvedActiveCategory;
+      const hasKnownCategory = productHasKnownCategory(product, knownCategoryIds);
+      const matchesCategory = cleanQuery ? true : productBelongsToCategory(product, resolvedActiveCategory);
       const matchesBeerFormat =
         cleanQuery ||
+        !productBelongsToCategory(product, "cervezas") ||
         resolvedActiveCategory !== "cervezas" ||
         activeBeerFormat === "all" ||
         product.beerFormat === activeBeerFormat;
       const matchesQuery =
         !cleanQuery ||
-        normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category} ${product.beerFormat ?? ""}`).includes(cleanQuery);
+        normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category} ${product.secondaryCategory ?? ""} ${product.beerFormat ?? ""}`).includes(cleanQuery);
       return product.stock !== "hidden" && hasKnownCategory && matchesCategory && matchesBeerFormat && matchesQuery;
     });
-    return sortCatalogProducts(matchingProducts, productSortMode, settings.productOrder);
+    return sortCatalogProducts(matchingProducts, productSortMode, settings.productOrder, resolvedActiveCategory);
   }, [products, knownCategoryIds, resolvedActiveCategory, activeBeerFormat, query, productSortMode, settings.productOrder]);
   const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / productsPerCatalogPage));
   const safeProductPage = Math.min(currentProductPage, totalProductPages);
@@ -288,9 +291,9 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const currentCategoryLabel =
     productCategories.find((category) => category.id === resolvedActiveCategory)?.label || "productos";
   const catalogCountLabel = getCatalogCountLabel(filteredProducts.length, currentCategoryLabel, activeBeerFormat, query);
-  const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden" && knownCategoryIds.has(product.category)).slice(0, 2);
-  const visibleProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category)).length;
-  const promoProductCount = products.filter((product) => product.stock !== "hidden" && knownCategoryIds.has(product.category) && product.category === "promociones").length;
+  const featuredProducts = products.filter((product) => product.featured && product.stock !== "hidden" && productHasKnownCategory(product, knownCategoryIds)).slice(0, 2);
+  const visibleProductCount = products.filter((product) => product.stock !== "hidden" && productHasKnownCategory(product, knownCategoryIds)).length;
+  const promoProductCount = products.filter((product) => product.stock !== "hidden" && productHasKnownCategory(product, knownCategoryIds) && productBelongsToCategory(product, "promociones")).length;
   const cartLines = cart
     .map((item) => {
       const product = products.find((entry) => entry.id === item.productId && entry.stock !== "sold_out");
@@ -298,8 +301,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     })
     .filter(Boolean) as Array<CartItem & { product: Product; lineTotal: number }>;
   const subtotal = cartLines.reduce((sum, item) => sum + item.lineTotal, 0);
+  const appliedCoupon = findCoupon(settings.coupons, couponCode);
+  const couponError = getCouponError(appliedCoupon, subtotal, settings.minimumOrderAmount);
+  const discount = couponError ? 0 : calculateCouponDiscount(appliedCoupon, subtotal, settings.minimumOrderAmount);
   const deliveryPrice = settings.deliveryEnabled && subtotal > 0 && selectedZone ? selectedZone.price : 0;
-  const total = subtotal + deliveryPrice;
+  const total = subtotal - discount + deliveryPrice;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   function confirmAge() {
@@ -325,6 +331,23 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   function updateStoreSortMode(value: ProductSortMode) {
     setProductSortMode(value);
     setCurrentProductPage(1);
+  }
+
+  function goToCatalogPage(page: number) {
+    setCurrentProductPage(page);
+    window.requestAnimationFrame(() => {
+      document.getElementById("catalogo")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
+  function applyCoupon() {
+    const coupon = findCoupon(settings.coupons, couponCode);
+    const error = getCouponError(coupon, subtotal, settings.minimumOrderAmount);
+    if (!coupon) {
+      setCouponStatus("Cupón no encontrado.");
+      return;
+    }
+    setCouponStatus(error || `Cupón aplicado: ${formatCurrency(calculateCouponDiscount(coupon, subtotal, settings.minimumOrderAmount))} de descuento.`);
   }
 
   function addToCart(product: Product) {
@@ -411,6 +434,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     if (!hasStreetAndNumber(customer.address)) return "Ingresa calle y número en la dirección.";
     if (!hasOnlyAddressCharacters(customer.address)) return "La dirección tiene caracteres no permitidos.";
     if (!customer.zoneId) return "Selecciona una zona de despacho / ciudad.";
+    if (couponCode.trim()) {
+      if (!appliedCoupon) return "El cupón ingresado no existe o está desactivado.";
+      if (couponError) return couponError;
+    }
+    if (total <= 0) return "El total debe ser mayor a $0.";
     return "";
   }
 
@@ -424,6 +452,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         lineTotal: item.lineTotal,
       })),
       subtotal,
+      discount,
+      couponCode: discount > 0 ? normalizeText(couponCode).toUpperCase() : undefined,
       delivery: deliveryPrice,
       total,
       zoneName: settings.deliveryEnabled
@@ -556,7 +586,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       window.alert("El precio original debe ser mayor que el precio normal.");
       return;
     }
-    if (draft.category === "cervezas" && !draft.beerFormat) return;
+    if (draft.secondaryCategory && draft.secondaryCategory === draft.category) {
+      window.alert("La segunda categoría debe ser distinta a la principal.");
+      return;
+    }
+    if ((draft.category === "cervezas" || draft.secondaryCategory === "cervezas") && !draft.beerFormat) return;
     if (hasDuplicateProductName(products, draft.name)) {
       window.alert("Ya existe un producto con ese nombre.");
       return;
@@ -567,6 +601,9 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       category: productCategories.some((category) => category.id === draft.category)
         ? draft.category
         : productCategories[0]?.id || "promociones",
+      secondaryCategory: draft.secondaryCategory && productCategories.some((category) => category.id === draft.secondaryCategory)
+        ? draft.secondaryCategory
+        : null,
       id: draft.id || crypto.randomUUID(),
       imageUrl:
         draft.imageUrl ||
@@ -593,6 +630,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           name,
           price: Number(price),
           category: (category as CategoryId) || productCategories[0]?.id || "promociones",
+          secondaryCategory: null,
           volume: volume || "Formato por definir",
           imageUrl:
             imageUrl ||
@@ -636,10 +674,6 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       setSyncStatus("error");
       window.setTimeout(() => setSyncStatus("idle"), 3500);
     }
-  }
-
-  if (mode === "store" && bootingStore) {
-    return <StoreLoading />;
   }
 
   if (mode === "store" && settings.maintenanceMode) {
@@ -782,7 +816,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
             page={safeProductPage}
             totalPages={totalProductPages}
             countLabel={catalogCountLabel}
-            onPage={setCurrentProductPage}
+            onPage={goToCatalogPage}
           />
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {paginatedProducts.length ? (
@@ -799,7 +833,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
             page={safeProductPage}
             totalPages={totalProductPages}
             countLabel={catalogCountLabel}
-            onPage={setCurrentProductPage}
+            onPage={goToCatalogPage}
             bottom
           />
         </div>
@@ -810,6 +844,9 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           customer={customer}
           activeZone={activeZone}
           subtotal={subtotal}
+          discount={discount}
+          couponCode={couponCode}
+          couponStatus={couponStatus}
           deliveryPrice={deliveryPrice}
           total={total}
           minimumOrderAmount={settings.minimumOrderAmount}
@@ -819,6 +856,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           onRemove={(productId) => setCart((current) => current.filter((item) => item.productId !== productId))}
           onQuantity={updateQuantity}
           onCustomer={updateCustomer}
+          onCouponCode={(value) => {
+            setCouponCode(value.toUpperCase());
+            setCouponStatus("");
+          }}
+          onApplyCoupon={applyCoupon}
           onDetectZone={detectZone}
           deliveryEnabled={settings.deliveryEnabled}
           addressSearchEnabled={settings.addressSearchEnabled}
@@ -850,6 +892,7 @@ function cleanProducts(products: Product[]) {
   return products.map((product) => ({
     ...product,
     description: normalizeText(product.description) === normalizeText(autoAdminDescription) ? "" : product.description,
+    secondaryCategory: product.secondaryCategory || null,
   }));
 }
 
@@ -862,6 +905,7 @@ function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
       ? "56989351855"
       : settings.whatsappNumber || defaultSettings.whatsappNumber,
     attendanceSchedule: settings.attendanceSchedule || defaultSettings.attendanceSchedule,
+    coupons: settings.coupons || defaultSettings.coupons,
     productOrder: settings.productOrder || defaultSettings.productOrder,
     bankDetails: { ...defaultSettings.bankDetails, ...settings.bankDetails },
     seo: { ...defaultSettings.seo, ...settings.seo },
@@ -886,10 +930,12 @@ function getEffectiveAttendance(settings: SiteSettings, date: Date) {
   return now >= open || now < close;
 }
 
-function productOrderIndex(product: Product, productOrder: Record<string, string[]>) {
-  const order = productOrder[product.category] || [];
-  const index = order.indexOf(product.id);
-  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+function productBelongsToCategory(product: Product, categoryId: string) {
+  return product.category === categoryId || product.secondaryCategory === categoryId;
+}
+
+function productHasKnownCategory(product: Product, categoryIds: Set<string>) {
+  return categoryIds.has(product.category) || Boolean(product.secondaryCategory && categoryIds.has(product.secondaryCategory));
 }
 
 function productAvailabilityRank(product: Product) {
@@ -898,13 +944,13 @@ function productAvailabilityRank(product: Product) {
   return 1;
 }
 
-function sortCatalogProducts(products: Product[], sortMode: ProductSortMode, productOrder: Record<string, string[]>) {
+function sortCatalogProducts(products: Product[], sortMode: ProductSortMode, productOrder: Record<string, string[]>, viewCategory?: string) {
   return [...products].sort((a, b) => {
     const availability = productAvailabilityRank(a) - productAvailabilityRank(b);
     if (availability) return availability;
     if (sortMode === "price_asc") return a.price - b.price;
     if (sortMode === "price_desc") return b.price - a.price;
-    const manual = productOrderIndex(a, productOrder) - productOrderIndex(b, productOrder);
+    const manual = productOrderIndexForCategory(a, productOrder, viewCategory) - productOrderIndexForCategory(b, productOrder, viewCategory);
     if (manual) return manual;
     return a.name.localeCompare(b.name, "es");
   });
@@ -916,8 +962,44 @@ function hasDuplicateProductName(products: Product[], name: string, currentId?: 
   return products.some((product) => product.id !== currentId && normalizeText(product.name) === cleanName);
 }
 
+function productOrderIndexForCategory(product: Product, productOrder: Record<string, string[]>, categoryId?: string) {
+  const order = productOrder[categoryId || product.category] || [];
+  const index = order.indexOf(product.id);
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
 function hasInvalidOriginalPrice(product: Pick<Product, "price" | "originalPrice">) {
   return Boolean(product.originalPrice && product.originalPrice <= product.price);
+}
+
+function findCoupon(coupons: Coupon[], code: string) {
+  const cleanCode = normalizeText(code).toUpperCase();
+  if (!cleanCode) return null;
+  return coupons.find((coupon) => coupon.active && normalizeText(coupon.code).toUpperCase() === cleanCode) || null;
+}
+
+function calculateCouponDiscount(coupon: Coupon | null, subtotal: number, minimumOrderAmount: number) {
+  if (!coupon || subtotal <= 0) return 0;
+  const rawDiscount = coupon.type === "percentage"
+    ? Math.floor((subtotal * coupon.value) / 100)
+    : coupon.value;
+  const maxByPositiveTotal = Math.max(0, subtotal - 1);
+  const maxByMinimum = minimumOrderAmount > 0 ? Math.max(0, subtotal - minimumOrderAmount) : maxByPositiveTotal;
+  return Math.min(rawDiscount, maxByPositiveTotal, maxByMinimum);
+}
+
+function getCouponError(coupon: Coupon | null, subtotal: number, minimumOrderAmount: number) {
+  if (!coupon) return "";
+  if (coupon.minimumSubtotal > 0 && subtotal < coupon.minimumSubtotal) {
+    return `Este cupón requiere un subtotal mínimo de ${formatCurrency(coupon.minimumSubtotal)}.`;
+  }
+  const discount = calculateCouponDiscount(coupon, subtotal, minimumOrderAmount);
+  if (discount <= 0) {
+    return minimumOrderAmount > 0
+      ? "Este cupón no puede aplicarse porque dejaría el pedido bajo el monto mínimo."
+      : "Este cupón no puede dejar el total en $0.";
+  }
+  return "";
 }
 
 function getCatalogCountLabel(totalProducts: number, categoryLabel: string, beerFormat: "all" | "latas" | "botellas", query: string) {
@@ -1399,6 +1481,9 @@ function CheckoutPanel(props: {
   customer: CustomerDetails;
   activeZone: { id: string; name: string; price: number; eta: string };
   subtotal: number;
+  discount: number;
+  couponCode: string;
+  couponStatus: string;
   deliveryPrice: number;
   total: number;
   minimumOrderAmount: number;
@@ -1408,6 +1493,8 @@ function CheckoutPanel(props: {
   onRemove: (productId: string) => void;
   onQuantity: (productId: string, delta: number) => void;
   onCustomer: (field: keyof CustomerDetails, value: string | boolean) => void;
+  onCouponCode: (value: string) => void;
+  onApplyCoupon: () => void;
   onDetectZone: () => void;
   deliveryEnabled: boolean;
   addressSearchEnabled: boolean;
@@ -1586,9 +1673,31 @@ function CheckoutPanel(props: {
             Notas
             <textarea value={props.customer.notes} onChange={(event) => props.onCustomer("notes", event.target.value)} className="min-h-20 rounded-lg border border-neutral-300 px-3 py-2 font-medium" />
           </label>
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+            <label className="grid gap-1 text-sm font-bold">
+              Cupón de descuento (opcional)
+              <div className="flex gap-2">
+                <input
+                  value={props.couponCode}
+                  onChange={(event) => props.onCouponCode(event.target.value)}
+                  placeholder="Ej: FONO10"
+                  className="h-11 min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white px-3 font-medium uppercase"
+                />
+                <button type="button" onClick={props.onApplyCoupon} className="action-button h-11 rounded-lg bg-neutral-950 px-4 text-sm font-black text-white">
+                  Aplicar
+                </button>
+              </div>
+            </label>
+            {props.couponStatus ? (
+              <p className={`mt-2 rounded-lg px-3 py-2 text-xs font-black ${props.discount > 0 ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-900"}`}>
+                {props.couponStatus}
+              </p>
+            ) : null}
+          </div>
         </div>
         <OrderTotals
           subtotal={props.subtotal}
+          discount={props.discount}
           delivery={props.deliveryPrice}
           total={props.total}
           zone={props.activeZone}
@@ -1935,6 +2044,7 @@ function AdminPanel(props: {
             <SegmentButton active={props.adminView === "catalog"} onClick={() => props.setAdminView("catalog")}>Catálogo</SegmentButton>
             <SegmentButton active={props.adminView === "categories"} onClick={() => props.setAdminView("categories")}>Categorías</SegmentButton>
             <SegmentButton active={props.adminView === "zones"} onClick={() => props.setAdminView("zones")}>Zonas</SegmentButton>
+            <SegmentButton active={props.adminView === "coupons"} onClick={() => props.setAdminView("coupons")}>Cupones</SegmentButton>
             <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
             <SegmentButton active={props.adminView === "seo"} onClick={() => props.setAdminView("seo")}>SEO</SegmentButton>
             <SegmentButton active={props.adminView === "faqs"} onClick={() => props.setAdminView("faqs")}>FAQ</SegmentButton>
@@ -1957,6 +2067,8 @@ function AdminPanel(props: {
           />
         ) : props.adminView === "zones" ? (
           <ZonesAdmin zones={props.deliveryZones} setZones={props.setDeliveryZones} />
+        ) : props.adminView === "coupons" ? (
+          <CouponsAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} syncStatus={props.syncStatus} />
         ) : props.adminView === "faqs" ? (
           <FaqAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} />
         ) : props.adminView === "settings" ? (
@@ -2448,6 +2560,131 @@ function StatusPill({ label, className }: { label: string; className: string }) 
   return <span className={`rounded-md px-2 py-1 text-xs font-black ${className}`}>{label}</span>;
 }
 
+function CouponsAdmin({
+  settings,
+  onSaveSettings,
+  syncStatus,
+}: {
+  settings: SiteSettings;
+  onSaveSettings: (settings: SiteSettings) => Promise<void>;
+  syncStatus: "idle" | "syncing" | "saved" | "error";
+}) {
+  const [draft, setDraft] = useState<Coupon>({
+    id: "",
+    code: "",
+    type: "percentage",
+    value: 10,
+    active: true,
+    minimumSubtotal: 0,
+    description: "",
+  });
+  const coupons = settings.coupons || [];
+
+  function saveCoupons(nextCoupons: Coupon[]) {
+    void onSaveSettings({ ...settings, coupons: nextCoupons });
+  }
+
+  function addCoupon(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const code = normalizeText(draft.code).toUpperCase();
+    if (!code) return;
+    if (coupons.some((coupon) => normalizeText(coupon.code).toUpperCase() === code)) {
+      window.alert("Ya existe un cupón con ese código.");
+      return;
+    }
+    if (draft.value <= 0) {
+      window.alert("El descuento debe ser mayor a 0.");
+      return;
+    }
+    if (draft.type === "percentage" && draft.value > 90) {
+      window.alert("El porcentaje máximo permitido es 90%.");
+      return;
+    }
+    saveCoupons([{ ...draft, id: crypto.randomUUID(), code }, ...coupons]);
+    setDraft({ id: "", code: "", type: "percentage", value: 10, active: true, minimumSubtotal: 0, description: "" });
+  }
+
+  function updateCoupon(coupon: Coupon, nextCoupon: Coupon) {
+    const nextCode = normalizeText(nextCoupon.code).toUpperCase();
+    if (!nextCode || nextCoupon.value <= 0) return;
+    if (nextCoupon.type === "percentage" && nextCoupon.value > 90) return;
+    const duplicate = coupons.some((item) => item.id !== coupon.id && normalizeText(item.code).toUpperCase() === nextCode);
+    if (duplicate) {
+      window.alert("Ya existe otro cupón con ese código.");
+      return;
+    }
+    saveCoupons(coupons.map((item) => item.id === coupon.id ? { ...nextCoupon, code: nextCode } : item));
+  }
+
+  return (
+    <section className="grid gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <form onSubmit={addCoupon} className="rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+        <h3 className="mb-4 text-xl font-black">Nuevo cupón</h3>
+        <div className="grid gap-3">
+          <Input label="Código" value={draft.code} onChange={(value) => setDraft({ ...draft, code: value.toUpperCase() })} placeholder="Ej: FONO10" />
+          <label className="grid gap-1 text-sm font-bold">
+            Tipo de descuento
+            <select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as Coupon["type"] })} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-medium">
+              <option value="percentage">Porcentaje</option>
+              <option value="fixed">Monto fijo</option>
+            </select>
+          </label>
+          <Input label={draft.type === "percentage" ? "Porcentaje" : "Monto"} type="number" value={String(draft.value || "")} onChange={(value) => setDraft({ ...draft, value: Number(value) })} />
+          <Input label="Subtotal mínimo para usarlo" type="number" value={String(draft.minimumSubtotal || "")} onChange={(value) => setDraft({ ...draft, minimumSubtotal: Number(value) })} />
+          <Textarea label="Descripción interna" value={draft.description} onChange={(value) => setDraft({ ...draft, description: value })} />
+          <button className="action-button h-11 rounded-lg bg-neutral-950 text-sm font-black text-white">
+            Crear cupón
+          </button>
+        </div>
+      </form>
+      <div className="grid content-start gap-3">
+        <div className="rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
+          <h3 className="text-xl font-black">Cupones</h3>
+          <p className="text-sm font-semibold text-neutral-600">El descuento nunca dejará el total en $0 ni bajo el monto mínimo configurado.</p>
+          <div className="mt-3">
+            <SaveSettingsButton syncStatus={syncStatus} label="Guardar cupones" savedLabel="Cupones guardados" />
+          </div>
+        </div>
+        {coupons.length ? coupons.map((coupon) => (
+          <div key={coupon.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-3 md:grid-cols-[1fr_150px_120px_150px_110px_auto] md:items-end">
+            <Input label="Código" value={coupon.code} onChange={(value) => updateCoupon(coupon, { ...coupon, code: value })} />
+            <label className="grid gap-1 text-sm font-bold">
+              Tipo
+              <select value={coupon.type} onChange={(event) => updateCoupon(coupon, { ...coupon, type: event.target.value as Coupon["type"] })} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-medium">
+                <option value="percentage">Porcentaje</option>
+                <option value="fixed">Monto</option>
+              </select>
+            </label>
+            <Input label="Valor" type="number" value={String(coupon.value)} onChange={(value) => updateCoupon(coupon, { ...coupon, value: Number(value) })} />
+            <Input label="Subtotal mín." type="number" value={String(coupon.minimumSubtotal || "")} onChange={(value) => updateCoupon(coupon, { ...coupon, minimumSubtotal: Number(value) })} />
+            <button
+              type="button"
+              onClick={() => updateCoupon(coupon, { ...coupon, active: !coupon.active })}
+              className={`action-button h-10 rounded-lg text-sm font-black ${coupon.active ? "bg-green-600 text-white" : "bg-neutral-200 text-neutral-700"}`}
+            >
+              {coupon.active ? "Activo" : "Pausado"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (window.confirm(`¿Eliminar el cupón ${coupon.code}?`)) saveCoupons(coupons.filter((item) => item.id !== coupon.id));
+              }}
+              className="action-button grid size-10 place-items-center rounded-lg bg-red-50 text-red-700"
+              title="Eliminar"
+            >
+              <Trash2 size={18} />
+            </button>
+          </div>
+        )) : (
+          <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center text-sm font-bold text-neutral-500">
+            Aún no hay cupones creados.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function paymentMethodLabel(method: OrderPayload["paymentMethod"]) {
   if (method === "cash_on_delivery") return "Pago contra entrega";
   if (method === "mercadopago") return "Mercado Pago";
@@ -2473,10 +2710,11 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   const [productView, setProductView] = useState("__latest");
   const [adminProductQuery, setAdminProductQuery] = useState("");
   const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
+  const [showDraftSecondaryCategory, setShowDraftSecondaryCategory] = useState(Boolean(props.draft.secondaryCategory));
   const [optimizeStatus, setOptimizeStatus] = useState("");
   const [optimizingImages, setOptimizingImages] = useState(false);
   const categoryIds = useMemo(() => new Set(props.categories.map((category) => category.id)), [props.categories]);
-  const uncategorizedProducts = props.products.filter((product) => !categoryIds.has(product.category));
+  const uncategorizedProducts = props.products.filter((product) => !productHasKnownCategory(product, categoryIds));
   const featuredAdminProducts = props.products.filter((product) => product.featured);
   const availableAdminProducts = props.products.filter((product) => product.stock === "available");
   const lowStockAdminProducts = props.products.filter((product) => product.stock === "low");
@@ -2484,7 +2722,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   const hiddenAdminProducts = props.products.filter((product) => product.stock === "hidden");
   const orderableProductsInView =
     !productView.startsWith("__") && productView !== "__latest" && productView !== "__uncategorized" && productView !== "__featured"
-      ? sortCatalogProducts(props.products.filter((product) => product.category === productView && product.stock !== "hidden" && product.stock !== "sold_out"), "manual", props.settings.productOrder)
+      ? sortCatalogProducts(props.products.filter((product) => productBelongsToCategory(product, productView) && product.stock !== "hidden" && product.stock !== "sold_out"), "manual", props.settings.productOrder, productView)
       : [];
   const baseAdminProducts =
     productView === "__latest"
@@ -2501,11 +2739,11 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
         ? hiddenAdminProducts
       : productView === "__uncategorized"
         ? uncategorizedProducts
-        : sortCatalogProducts(props.products.filter((product) => product.category === productView), "manual", props.settings.productOrder);
+        : sortCatalogProducts(props.products.filter((product) => productBelongsToCategory(product, productView)), "manual", props.settings.productOrder, productView);
   const cleanAdminProductQuery = normalizeText(adminProductQuery);
   const visibleAdminProducts = cleanAdminProductQuery
     ? props.products.filter((product) =>
-        normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category}`).includes(cleanAdminProductQuery),
+        normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category} ${product.secondaryCategory ?? ""}`).includes(cleanAdminProductQuery),
       )
     : baseAdminProducts;
 
@@ -2571,8 +2809,28 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               disabled={!props.draft.price}
               onChange={(value) => props.setDraft({ ...props.draft, originalPrice: props.draft.price && value ? Number(value) : null })}
             />
-            <SelectCategory categories={props.categories} value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category, beerFormat: category === "cervezas" ? props.draft.beerFormat : null })} />
-            {props.draft.category === "cervezas" ? <SelectBeerFormat value={props.draft.beerFormat || ""} onChange={(beerFormat) => props.setDraft({ ...props.draft, beerFormat: beerFormat || null })} required /> : null}
+            <SelectCategory label="Categoría principal" categories={props.categories} value={props.draft.category} onChange={(category) => props.setDraft({ ...props.draft, category, beerFormat: category === "cervezas" || props.draft.secondaryCategory === "cervezas" ? props.draft.beerFormat : null })} />
+            <label className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-bold">
+              <input
+                type="checkbox"
+                checked={showDraftSecondaryCategory}
+                onChange={(event) => {
+                  setShowDraftSecondaryCategory(event.target.checked);
+                  if (!event.target.checked) props.setDraft({ ...props.draft, secondaryCategory: null, beerFormat: props.draft.category === "cervezas" ? props.draft.beerFormat : null });
+                }}
+              />
+              Agregar segunda categoría
+            </label>
+            {showDraftSecondaryCategory ? (
+              <SelectCategory
+                label="Segunda categoría (opcional)"
+                categories={props.categories.filter((category) => category.id !== props.draft.category)}
+                value={props.draft.secondaryCategory || ""}
+                allowEmpty
+                onChange={(secondaryCategory) => props.setDraft({ ...props.draft, secondaryCategory: secondaryCategory || null, beerFormat: props.draft.category === "cervezas" || secondaryCategory === "cervezas" ? props.draft.beerFormat : null })}
+              />
+            ) : null}
+            {(props.draft.category === "cervezas" || props.draft.secondaryCategory === "cervezas") ? <SelectBeerFormat value={props.draft.beerFormat || ""} onChange={(beerFormat) => props.setDraft({ ...props.draft, beerFormat: beerFormat || null })} required /> : null}
             <Input label="Volumen" placeholder="Ej: 750 ml, 1 L, 40°" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
             <div className="grid gap-2">
               <span className="text-sm font-bold">Imagen del producto</span>
@@ -2635,7 +2893,9 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               />
             </div>
           </label>
-          <div className="flex max-w-full gap-2 overflow-x-auto pb-2">
+          <div className="mb-3">
+            <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-neutral-500">Vistas rápidas</p>
+            <div className="flex max-w-full gap-2 overflow-x-auto pb-2">
             <CatalogFilterButton active={productView === "__latest"} onClick={() => setProductView("__latest")}>
               Últimos 5
             </CatalogFilterButton>
@@ -2654,14 +2914,19 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             <CatalogFilterButton active={productView === "__hidden"} onClick={() => setProductView("__hidden")}>
               Ocultos ({hiddenAdminProducts.length})
             </CatalogFilterButton>
-            {props.categories.map((category) => (
-              <CatalogFilterButton key={category.id} active={productView === category.id} onClick={() => setProductView(category.id)}>
-                {category.label} ({props.products.filter((product) => product.category === category.id).length})
-              </CatalogFilterButton>
-            ))}
             <CatalogFilterButton active={productView === "__uncategorized"} onClick={() => setProductView("__uncategorized")}>
               Sin categoría ({uncategorizedProducts.length})
             </CatalogFilterButton>
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-neutral-500">Categorías</p>
+            <div className="flex max-w-full gap-2 overflow-x-auto pb-2">
+            {props.categories.map((category) => (
+              <CatalogFilterButton key={category.id} active={productView === category.id} onClick={() => setProductView(category.id)}>
+                {category.label} ({props.products.filter((product) => productBelongsToCategory(product, category.id)).length})
+              </CatalogFilterButton>
+            ))}
           </div>
         </div>
         {visibleAdminProducts.length ? (
@@ -2690,6 +2955,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
         )}
       </div>
     </div>
+  </div>
   );
 }
 
@@ -2717,7 +2983,8 @@ function ProductAdminCard({
   onSaveProduct: (product: Product) => Promise<void>;
   onDeleteProduct: (productId: string) => Promise<void>;
 }) {
-  const hasCategory = categoryIds.has(product.category);
+  const [showSecondaryCategory, setShowSecondaryCategory] = useState(Boolean(product.secondaryCategory));
+  const hasCategory = productHasKnownCategory(product, categoryIds);
   const selectedCategory = hasCategory ? product.category : "";
 
   function update(nextProduct: Product) {
@@ -2745,14 +3012,19 @@ function ProductAdminCard({
       window.alert("Asigna una categoría válida antes de guardar.");
       return;
     }
-    if (nextProduct.category === "cervezas" && !nextProduct.beerFormat) {
+    if (nextProduct.secondaryCategory && nextProduct.secondaryCategory === nextProduct.category) {
+      window.alert("La segunda categoría debe ser distinta a la principal.");
+      return;
+    }
+    if ((nextProduct.category === "cervezas" || nextProduct.secondaryCategory === "cervezas") && !nextProduct.beerFormat) {
       window.alert("Selecciona si la cerveza es lata o botella.");
       return;
     }
     const cleanProduct = {
       ...nextProduct,
       originalPrice: nextProduct.price > 0 ? nextProduct.originalPrice || null : null,
-      beerFormat: nextProduct.category === "cervezas" ? nextProduct.beerFormat : null,
+      secondaryCategory: nextProduct.secondaryCategory || null,
+      beerFormat: nextProduct.category === "cervezas" || nextProduct.secondaryCategory === "cervezas" ? nextProduct.beerFormat : null,
     };
     update(cleanProduct);
     void onSaveProduct(cleanProduct);
@@ -2781,8 +3053,8 @@ function ProductAdminCard({
       <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_170px]">
         <img src={product.imageUrl} alt="" className="h-24 w-full rounded-lg object-cover md:h-full" />
         <div className="grid min-w-0 gap-2">
-          <input value={product.name} onChange={(event) => update({ ...product, name: event.target.value })} className="rounded-md border border-neutral-300 px-3 py-2 font-black" />
-          <textarea value={product.description} onChange={(event) => update({ ...product, description: event.target.value })} className="min-h-16 rounded-md border border-neutral-300 px-3 py-2 text-sm" />
+          <input value={product.name} onChange={(event) => update({ ...product, name: event.target.value })} className="rounded-md border border-neutral-300 px-3 py-2 font-normal" />
+          <textarea value={product.description} onChange={(event) => update({ ...product, description: event.target.value })} className="min-h-16 rounded-md border border-neutral-300 px-3 py-2 text-sm font-normal" />
           <ImagePicker
             label="Subir imagen"
             onImage={(imageUrl) => {
@@ -2795,7 +3067,7 @@ function ProductAdminCard({
             value={product.imageUrl}
             onChange={(event) => update({ ...product, imageUrl: event.target.value })}
             placeholder="Foto URL"
-            className="rounded-md border border-neutral-300 px-3 py-2 text-xs"
+            className="rounded-md border border-neutral-300 px-3 py-2 text-xs font-normal"
           />
         </div>
         <div className="grid gap-2">
@@ -2807,7 +3079,7 @@ function ProductAdminCard({
               const price = Number(event.target.value);
               update({ ...product, price, originalPrice: price > 0 ? product.originalPrice : null });
             }}
-            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold"
+            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-normal"
           />
           <input
             value={product.originalPrice || ""}
@@ -2815,22 +3087,43 @@ function ProductAdminCard({
             placeholder="Precio original opcional"
             disabled={!product.price}
             onChange={(event) => update({ ...product, originalPrice: product.price && event.target.value ? Number(event.target.value) : null })}
-            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
+            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-normal disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
           />
           <SelectCategory
+            label="Categoría principal"
             categories={categories}
             value={selectedCategory}
             allowEmpty
-            onChange={(category) => update({ ...product, category, beerFormat: category === "cervezas" ? product.beerFormat || null : null })}
+            onChange={(category) => update({ ...product, category, secondaryCategory: product.secondaryCategory === category ? null : product.secondaryCategory, beerFormat: category === "cervezas" || product.secondaryCategory === "cervezas" ? product.beerFormat || null : null })}
           />
-          {product.category === "cervezas" ? (
+          <label className="flex items-center gap-2 rounded-md bg-neutral-50 px-2 py-2 text-xs font-black uppercase text-neutral-500">
+            <input
+              type="checkbox"
+              checked={showSecondaryCategory}
+              onChange={(event) => {
+                setShowSecondaryCategory(event.target.checked);
+                if (!event.target.checked) update({ ...product, secondaryCategory: null, beerFormat: product.category === "cervezas" ? product.beerFormat : null });
+              }}
+            />
+            Segunda categoría
+          </label>
+          {showSecondaryCategory ? (
+            <SelectCategory
+              label="Segunda categoría"
+              categories={categories.filter((category) => category.id !== product.category)}
+              value={product.secondaryCategory || ""}
+              allowEmpty
+              onChange={(secondaryCategory) => update({ ...product, secondaryCategory: secondaryCategory || null, beerFormat: product.category === "cervezas" || secondaryCategory === "cervezas" ? product.beerFormat || null : null })}
+            />
+          ) : null}
+          {(product.category === "cervezas" || product.secondaryCategory === "cervezas") ? (
             <SelectBeerFormat value={product.beerFormat || ""} onChange={(beerFormat) => update({ ...product, beerFormat: beerFormat || null })} required />
           ) : null}
           <input
             value={product.volume}
             placeholder="Volumen: 750 ml, 1 L, 40°"
             onChange={(event) => update({ ...product, volume: event.target.value })}
-            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-bold"
+            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-normal"
           />
           <label className="grid gap-1 text-xs font-black uppercase text-neutral-500">
             Estado del producto
@@ -2932,7 +3225,7 @@ function CategoriesAdmin({
   const [status, setStatus] = useState("");
   const [categoryQuery, setCategoryQuery] = useState("");
   const productCounts = useMemo(
-    () => new Map(categories.map((category) => [category.id, products.filter((product) => product.category === category.id).length])),
+    () => new Map(categories.map((category) => [category.id, products.filter((product) => productBelongsToCategory(product, category.id)).length])),
     [categories, products],
   );
   const filteredCategories = categories.filter((category) => normalizeText(category.label).includes(normalizeText(categoryQuery)));
@@ -3364,11 +3657,12 @@ function BackupExportPanel({ products, orders, settings }: { products: Product[]
   function exportProducts() {
     exportCsv(
       `fonocopete-productos-${dateLabel}.csv`,
-      ["id", "nombre", "categoria", "precio_normal", "precio_original", "tipo_cerveza", "volumen", "descripcion", "stock", "destacado", "imagen"],
+      ["id", "nombre", "categoria_principal", "segunda_categoria", "precio_normal", "precio_original", "tipo_cerveza", "volumen", "descripcion", "stock", "destacado", "imagen"],
       products.map((product) => [
         product.id,
         product.name,
         product.category,
+        product.secondaryCategory || "",
         product.price,
         product.originalPrice || "",
         product.beerFormat || "",
@@ -3394,6 +3688,8 @@ function BackupExportPanel({ products, orders, settings }: { products: Product[]
         "referencia",
         "zona",
         "subtotal",
+        "descuento",
+        "cupon",
         "delivery",
         "total",
         "metodo_pago",
@@ -3412,6 +3708,8 @@ function BackupExportPanel({ products, orders, settings }: { products: Product[]
         order.addressExtra,
         order.zoneName,
         order.subtotal,
+        order.discount,
+        order.couponCode,
         order.delivery,
         order.total,
         paymentMethodLabel(order.paymentMethod),
@@ -3627,20 +3925,6 @@ function BooleanControl({
   );
 }
 
-function StoreLoading() {
-  return (
-    <main className="grid min-h-screen place-items-center bg-neutral-950 px-4 text-white">
-      <div className="grid justify-items-center gap-4 text-center">
-        <img src="/fonocopete-logo-circle.jpg" alt="" className="size-20 rounded-full border border-white/20 object-cover" />
-        <div>
-          <p className="text-2xl font-black uppercase">Fonocopete</p>
-          <p className="mt-1 text-sm font-black uppercase tracking-[0.22em] text-red-400">Cargando catalogo</p>
-        </div>
-      </div>
-    </main>
-  );
-}
-
 function MaintenanceScreen({ message }: { message: string }) {
   return (
     <main className="grid min-h-screen place-items-center bg-neutral-950 px-4 py-8 text-white">
@@ -3656,7 +3940,7 @@ function MaintenanceScreen({ message }: { message: string }) {
             <div className="mb-4 grid size-14 place-items-center rounded-lg bg-amber-300 text-neutral-950">
               <Wrench size={28} />
             </div>
-            <h1 className="text-4xl font-black">Fonocopete MAVERIK</h1>
+            <h1 className="text-4xl font-black">Fonocopete Concepción</h1>
             <p className="mt-3 max-w-xl text-lg leading-8 text-neutral-200">{message}</p>
           </div>
         </div>
@@ -3796,7 +4080,7 @@ function Input(props: {
         disabled={props.disabled}
         placeholder={props.placeholder}
         onChange={(event) => props.onChange(event.target.value)}
-        className="h-11 min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-medium disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
+        className="h-11 min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-normal disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
         required={props.required}
       />
     </label>
@@ -3899,7 +4183,7 @@ function Textarea(props: { label: string; value: string; onChange: (value: strin
         value={props.value}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
-        className="min-h-20 rounded-lg border border-neutral-300 bg-white px-3 py-2 font-medium disabled:cursor-not-allowed disabled:bg-white disabled:text-neutral-500"
+        className="min-h-20 rounded-lg border border-neutral-300 bg-white px-3 py-2 font-normal disabled:cursor-not-allowed disabled:bg-white disabled:text-neutral-500"
       />
     </label>
   );
@@ -4049,11 +4333,11 @@ function RangeControl({
   );
 }
 
-function SelectCategory(props: { categories: ProductCategory[]; value: CategoryId; onChange: (value: CategoryId) => void; onBlur?: () => void; allowEmpty?: boolean }) {
+function SelectCategory(props: { categories: ProductCategory[]; value: CategoryId; onChange: (value: CategoryId) => void; onBlur?: () => void; allowEmpty?: boolean; label?: string }) {
   return (
     <label className="grid gap-1 text-sm font-bold">
-      Categoría
-      <select value={props.value} onChange={(event) => props.onChange(event.target.value as CategoryId)} onBlur={props.onBlur} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-bold">
+      {props.label || "Categoría"}
+      <select value={props.value} onChange={(event) => props.onChange(event.target.value as CategoryId)} onBlur={props.onBlur} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-medium">
         {props.allowEmpty ? <option value="">Sin categoría</option> : null}
         {props.categories.map((category) => (
           <option key={category.id} value={category.id}>
@@ -4069,7 +4353,7 @@ function SelectBeerFormat(props: { value: "" | "latas" | "botellas"; onChange: (
   return (
     <label className="grid gap-1 text-sm font-bold">
       Formato de cerveza
-      <select value={props.value} required={props.required} onChange={(event) => props.onChange(event.target.value as "" | "latas" | "botellas")} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-bold">
+      <select value={props.value} required={props.required} onChange={(event) => props.onChange(event.target.value as "" | "latas" | "botellas")} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-medium">
         <option value="">Selecciona lata o botella</option>
         <option value="latas">Latas</option>
         <option value="botellas">Botellas</option>
@@ -4080,6 +4364,7 @@ function SelectBeerFormat(props: { value: "" | "latas" | "botellas"; onChange: (
 
 function OrderTotals({
   subtotal,
+  discount,
   delivery,
   total,
   zone,
@@ -4087,6 +4372,7 @@ function OrderTotals({
   minimumOrderAmount,
 }: {
   subtotal: number;
+  discount: number;
   delivery: number;
   total: number;
   zone: { name: string; eta: string };
@@ -4099,6 +4385,10 @@ function OrderTotals({
       <div className="flex items-center justify-between text-sm font-bold text-neutral-600">
         <span>Subtotal</span>
         <span>{formatCurrency(subtotal)}</span>
+      </div>
+      <div className="mt-2 flex items-center justify-between text-sm font-bold text-neutral-600">
+        <span>Descuento</span>
+        <span>{discount > 0 ? `-${formatCurrency(discount)}` : formatCurrency(0)}</span>
       </div>
       <div className="mt-2 flex items-center justify-between text-sm font-bold text-neutral-600">
         <span>Delivery</span>

@@ -13,12 +13,18 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
   const supabase = createServerSupabaseClient();
   if (!supabase) return NextResponse.json({ ok: true, source: "demo" });
 
-  const { count, error: countError } = await supabase
+  const { count: primaryCount, error: primaryError } = await supabase
     .from("products")
     .select("id", { count: "exact", head: true })
     .eq("category_id", id);
+  const { count: secondaryCount, error: secondaryError } = await supabase
+    .from("products")
+    .select("id", { count: "exact", head: true })
+    .eq("secondary_category_id", id);
 
-  if (countError) return NextResponse.json({ error: countError.message }, { status: 500 });
+  if (primaryError) return NextResponse.json({ error: primaryError.message }, { status: 500 });
+  if (secondaryError) return NextResponse.json({ error: secondaryError.message }, { status: 500 });
+  const count = (primaryCount || 0) + (secondaryCount || 0);
   if (count) {
     return NextResponse.json(
       { error: `La categoría tiene ${count} producto${count === 1 ? "" : "s"}. Muévelos antes de eliminarla.` },

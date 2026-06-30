@@ -46,6 +46,7 @@ export function buildWhatsAppMessage(order: OrderPayload, purpose: "order" | "me
     productLines,
     "",
     `Subtotal: ${formatCurrency(order.subtotal)}`,
+    order.discount > 0 ? `Cupón: ${order.couponCode || "Aplicado"} - ${formatCurrency(order.discount)}` : "",
     `Delivery: ${order.zoneName} - ${formatCurrency(order.delivery)}`,
     `Total: ${formatCurrency(order.total)}`,
     `Metodo de pago: ${paymentLabel}`,
