@@ -16,7 +16,6 @@ const productSchema = z
     beerFormat: z.enum(["latas", "botellas"]).nullable().optional(),
     imageUrl: z.string(),
     volume: z.string(),
-    description: z.string(),
     stock: z.enum(["available", "low", "sold_out", "hidden"]),
     featured: z.boolean().optional(),
   })
@@ -58,7 +57,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     .from("products")
     .update(mapProductToRow(parsed.data as Product))
     .eq("id", id)
-    .select("id,name,category_id,secondary_category_id,price,original_price,beer_format,image_url,volume,description,stock,featured")
+    .select("id,name,category_id,secondary_category_id,price,original_price,beer_format,image_url,volume,stock,featured")
     .single();
 
   if (error) {

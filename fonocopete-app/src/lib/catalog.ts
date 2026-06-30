@@ -16,7 +16,6 @@ export const initialProducts: Product[] = [
     category: "promociones",
     price: 12990,
     volume: "1 botella + 2 latas",
-    description: "Pack listo para compartir, frío según disponibilidad.",
     imageUrl:
       "https://images.unsplash.com/photo-1605270012917-bf157c5a9541?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -28,7 +27,6 @@ export const initialProducts: Product[] = [
     category: "promociones",
     price: 6990,
     volume: "6 x 355 cc",
-    description: "Cervezas rubias para llegar rápido al carrito.",
     imageUrl:
       "https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -41,7 +39,6 @@ export const initialProducts: Product[] = [
     beerFormat: "latas",
     price: 1190,
     volume: "470 cc",
-    description: "Clásica chilena, ideal para pedido rápido.",
     imageUrl:
       "https://images.unsplash.com/photo-1584225064785-c62a8b43d148?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -53,7 +50,6 @@ export const initialProducts: Product[] = [
     beerFormat: "botellas",
     price: 1790,
     volume: "330 cc",
-    description: "Amber ale con cuerpo medio.",
     imageUrl:
       "https://images.unsplash.com/photo-1618885472179-5e474019f2a9?auto=format&fit=crop&w=900&q=80",
     stock: "low",
@@ -64,7 +60,6 @@ export const initialProducts: Product[] = [
     category: "piscos",
     price: 8990,
     volume: "750 cc",
-    description: "Pisco suave para piscola o sour.",
     imageUrl:
       "https://images.unsplash.com/photo-1569529465841-dfecdab7503b?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -75,7 +70,6 @@ export const initialProducts: Product[] = [
     category: "piscos",
     price: 9490,
     volume: "750 cc",
-    description: "Formato clásico para reuniones.",
     imageUrl:
       "https://images.unsplash.com/photo-1527281400683-1aae777175f8?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -86,7 +80,6 @@ export const initialProducts: Product[] = [
     category: "vinos",
     price: 5490,
     volume: "750 cc",
-    description: "Tinto de mesa para acompañar comida.",
     imageUrl:
       "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -97,7 +90,6 @@ export const initialProducts: Product[] = [
     category: "destilados",
     price: 14990,
     volume: "750 cc",
-    description: "Vodka premium para coctelería simple.",
     imageUrl:
       "https://images.unsplash.com/photo-1614313511387-1436a4480ebb?auto=format&fit=crop&w=900&q=80",
     stock: "available",
@@ -108,7 +100,6 @@ export const initialProducts: Product[] = [
     category: "extras",
     price: 1990,
     volume: "2 kg",
-    description: "Bolsa de hielo para completar el pedido.",
     imageUrl:
       "https://images.unsplash.com/photo-1578662996442-48f60103fc96?auto=format&fit=crop&w=900&q=80",
     stock: "available",

@@ -62,7 +62,6 @@ import type {
 const catalogStorageKey = "fonocopete.catalog";
 const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
-const autoAdminDescription = "Producto cargado desde administracion.";
 const productsPerCatalogPage = 15;
 type AdminView = "orders" | "catalog" | "categories" | "zones" | "coupons" | "faqs" | "settings" | "seo" | "analytics";
 type ProductSortMode = "manual" | "price_asc" | "price_desc";
@@ -120,7 +119,6 @@ const productDraft: Product = {
   beerFormat: null,
   imageUrl: "",
   volume: "",
-  description: "",
   stock: "available",
 };
 
@@ -277,7 +275,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         product.beerFormat === activeBeerFormat;
       const matchesQuery =
         !cleanQuery ||
-        normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category} ${product.secondaryCategory ?? ""} ${product.beerFormat ?? ""}`).includes(cleanQuery);
+        normalizeText(`${product.name} ${product.volume} ${product.category} ${product.secondaryCategory ?? ""} ${product.beerFormat ?? ""}`).includes(cleanQuery);
       return product.stock !== "hidden" && hasKnownCategory && matchesCategory && matchesBeerFormat && matchesQuery;
     });
     return sortCatalogProducts(matchingProducts, productSortMode, settings.productOrder, resolvedActiveCategory);
@@ -608,7 +606,6 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       imageUrl:
         draft.imageUrl ||
         "https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=900&q=80",
-      description: draft.description.trim(),
       volume: draft.volume || "Formato por definir",
       originalPrice: draft.originalPrice && draft.price > 0 ? draft.originalPrice : null,
     };
@@ -635,7 +632,6 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           imageUrl:
             imageUrl ||
             "https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=900&q=80",
-          description: "Carga rápida desde lista.",
           stock: "available" as const,
         };
       })
@@ -758,7 +754,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
             <h1 className="text-4xl font-black uppercase leading-tight sm:text-6xl">Fonocopete</h1>
             <p className="mt-2 text-xl font-black uppercase text-red-500 sm:text-3xl">Concepción</p>
             <p className="mt-4 max-w-2xl text-base leading-7 text-neutral-300 sm:text-lg">
-              Botillería delivery en Concepción con cervezas, piscos, vinos y promociones.
+              Delivery de alcohol en Concepción: cervezas, piscos, vinos, destilados, promos y más para que el carrete no se acabe.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
               <Metric icon={<Beer size={20} />} label="Catálogo" value={`${visibleProductCount} productos · ${promoProductCount} promos`} />
@@ -891,7 +887,6 @@ function readLocal<T>(key: string, fallback: T): T {
 function cleanProducts(products: Product[]) {
   return products.map((product) => ({
     ...product,
-    description: normalizeText(product.description) === normalizeText(autoAdminDescription) ? "" : product.description,
     secondaryCategory: product.secondaryCategory || null,
   }));
 }
@@ -906,6 +901,7 @@ function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
       : settings.whatsappNumber || defaultSettings.whatsappNumber,
     attendanceSchedule: settings.attendanceSchedule || defaultSettings.attendanceSchedule,
     coupons: settings.coupons || defaultSettings.coupons,
+    newsletter: { ...defaultSettings.newsletter, ...settings.newsletter },
     productOrder: settings.productOrder || defaultSettings.productOrder,
     bankDetails: { ...defaultSettings.bankDetails, ...settings.bankDetails },
     seo: { ...defaultSettings.seo, ...settings.seo },
@@ -1444,7 +1440,6 @@ function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () =>
           </div>
           <ProductPrice product={product} />
         </div>
-        <p className="line-clamp-2 text-xs leading-4 text-neutral-600 sm:min-h-10 sm:text-sm sm:leading-5">{product.description}</p>
         <button
           type="button"
           onClick={onAdd}
@@ -2642,7 +2637,12 @@ function CouponsAdmin({
           <h3 className="text-xl font-black">Cupones</h3>
           <p className="text-sm font-semibold text-neutral-600">El descuento nunca dejará el total en $0 ni bajo el monto mínimo configurado.</p>
           <div className="mt-3">
-            <SaveSettingsButton syncStatus={syncStatus} label="Guardar cupones" savedLabel="Cupones guardados" />
+            <SaveSettingsButton
+              syncStatus={syncStatus}
+              label="Actualizar cupones"
+              savedLabel="Cupones actualizados"
+              onClick={() => void onSaveSettings({ ...settings, coupons })}
+            />
           </div>
         </div>
         {coupons.length ? coupons.map((coupon) => (
@@ -2743,7 +2743,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   const cleanAdminProductQuery = normalizeText(adminProductQuery);
   const visibleAdminProducts = cleanAdminProductQuery
     ? props.products.filter((product) =>
-        normalizeText(`${product.name} ${product.description} ${product.volume} ${product.category} ${product.secondaryCategory ?? ""}`).includes(cleanAdminProductQuery),
+        normalizeText(`${product.name} ${product.volume} ${product.category} ${product.secondaryCategory ?? ""}`).includes(cleanAdminProductQuery),
       )
     : baseAdminProducts;
 
@@ -2844,7 +2844,6 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
                 <Input label="Foto URL" value={props.draft.imageUrl} onChange={(value) => props.setDraft({ ...props.draft, imageUrl: value })} />
               )}
             </div>
-            <Textarea label="Descripción" value={props.draft.description} onChange={(value) => props.setDraft({ ...props.draft, description: value })} />
             <button className="flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
               <Check size={18} />
               Guardar producto
@@ -3031,7 +3030,7 @@ function ProductAdminCard({
   }
 
   return (
-    <div className={`rounded-lg border bg-white p-3 shadow-sm ${hasCategory ? "border-neutral-200" : "border-red-200 ring-2 ring-red-100"}`}>
+    <div className={`min-w-0 overflow-hidden rounded-lg border bg-white p-3 shadow-sm ${hasCategory ? "border-neutral-200" : "border-red-200 ring-2 ring-red-100"}`}>
       {!hasCategory ? (
         <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm font-black text-red-800">
           Producto sin categoría: no se muestra al cliente hasta asignarle una categoría.
@@ -3050,11 +3049,10 @@ function ProductAdminCard({
           </div>
         </div>
       ) : null}
-      <div className="grid gap-3 md:grid-cols-[88px_minmax(0,1fr)_170px]">
-        <img src={product.imageUrl} alt="" className="h-24 w-full rounded-lg object-cover md:h-full" />
+      <div className="grid min-w-0 gap-3 xl:grid-cols-[96px_minmax(0,1fr)_220px]">
+        <img src={product.imageUrl} alt="" className="h-24 w-full rounded-lg object-cover xl:h-full" />
         <div className="grid min-w-0 gap-2">
-          <input value={product.name} onChange={(event) => update({ ...product, name: event.target.value })} className="rounded-md border border-neutral-300 px-3 py-2 font-normal" />
-          <textarea value={product.description} onChange={(event) => update({ ...product, description: event.target.value })} className="min-h-16 rounded-md border border-neutral-300 px-3 py-2 text-sm font-normal" />
+          <input value={product.name} onChange={(event) => update({ ...product, name: event.target.value })} className="w-full min-w-0 rounded-md border border-neutral-300 px-3 py-2 font-normal" />
           <ImagePicker
             label="Subir imagen"
             onImage={(imageUrl) => {
@@ -3067,7 +3065,7 @@ function ProductAdminCard({
             value={product.imageUrl}
             onChange={(event) => update({ ...product, imageUrl: event.target.value })}
             placeholder="Foto URL"
-            className="rounded-md border border-neutral-300 px-3 py-2 text-xs font-normal"
+            className="w-full min-w-0 rounded-md border border-neutral-300 px-3 py-2 text-xs font-normal"
           />
         </div>
         <div className="grid gap-2">
@@ -3079,7 +3077,7 @@ function ProductAdminCard({
               const price = Number(event.target.value);
               update({ ...product, price, originalPrice: price > 0 ? product.originalPrice : null });
             }}
-            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-normal"
+            className="h-10 w-full min-w-0 rounded-md border border-neutral-300 px-2 text-sm font-normal"
           />
           <input
             value={product.originalPrice || ""}
@@ -3087,7 +3085,7 @@ function ProductAdminCard({
             placeholder="Precio original opcional"
             disabled={!product.price}
             onChange={(event) => update({ ...product, originalPrice: product.price && event.target.value ? Number(event.target.value) : null })}
-            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-normal disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
+            className="h-10 w-full min-w-0 rounded-md border border-neutral-300 px-2 text-sm font-normal disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
           />
           <SelectCategory
             label="Categoría principal"
@@ -3123,7 +3121,7 @@ function ProductAdminCard({
             value={product.volume}
             placeholder="Volumen: 750 ml, 1 L, 40°"
             onChange={(event) => update({ ...product, volume: event.target.value })}
-            className="h-10 rounded-md border border-neutral-300 px-2 text-sm font-normal"
+            className="h-10 w-full min-w-0 rounded-md border border-neutral-300 px-2 text-sm font-normal"
           />
           <label className="grid gap-1 text-xs font-black uppercase text-neutral-500">
             Estado del producto
@@ -3637,6 +3635,36 @@ function SettingsAdmin({
           <Textarea label="Mensaje inicial de WhatsApp (Beta)" value={draft.whatsappMessageIntro} onChange={() => undefined} disabled />
         </div>
       </SettingsSection>
+      <SettingsSection title="Marketing por correo (Beta)" description="Preparado para conectar campañas y promociones con Mailchimp.">
+        <BooleanControl
+          label="Newsletter Mailchimp (Beta)"
+          value={draft.newsletter.enabled}
+          onChange={(enabled) => setDraft({ ...draft, newsletter: { ...draft.newsletter, enabled } })}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="success"
+        />
+        <Input
+          label="URL formulario Mailchimp"
+          value={draft.newsletter.formUrl}
+          placeholder="https://..."
+          onChange={(formUrl) => setDraft({ ...draft, newsletter: { ...draft.newsletter, formUrl } })}
+        />
+        <Input
+          label="Audience ID"
+          value={draft.newsletter.audienceId}
+          placeholder="Se completa al crear la audiencia"
+          onChange={(audienceId) => setDraft({ ...draft, newsletter: { ...draft.newsletter, audienceId } })}
+        />
+        <Input
+          label="Etiquetas por defecto"
+          value={draft.newsletter.defaultTags}
+          onChange={(defaultTags) => setDraft({ ...draft, newsletter: { ...draft.newsletter, defaultTags } })}
+        />
+        <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
+          Queda listo para conectar la API de Mailchimp y enviar promociones cuando tengamos la cuenta y la audiencia definitiva.
+        </p>
+      </SettingsSection>
       <SettingsSection title="Datos bancarios para transferencia" description="Estos datos se muestran y se copian desde el proceso de pago.">
         <Input label="Banco" value={draft.bankDetails.bank} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, bank: value } })} />
         <Input label="Titular" value={draft.bankDetails.accountHolder} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, accountHolder: value } })} />
@@ -3657,7 +3685,7 @@ function BackupExportPanel({ products, orders, settings }: { products: Product[]
   function exportProducts() {
     exportCsv(
       `fonocopete-productos-${dateLabel}.csv`,
-      ["id", "nombre", "categoria_principal", "segunda_categoria", "precio_normal", "precio_original", "tipo_cerveza", "volumen", "descripcion", "stock", "destacado", "imagen"],
+      ["id", "nombre", "categoria_principal", "segunda_categoria", "precio_normal", "precio_original", "tipo_cerveza", "volumen", "stock", "destacado", "imagen"],
       products.map((product) => [
         product.id,
         product.name,
@@ -3667,7 +3695,6 @@ function BackupExportPanel({ products, orders, settings }: { products: Product[]
         product.originalPrice || "",
         product.beerFormat || "",
         product.volume,
-        product.description,
         product.stock,
         product.featured ? "si" : "no",
         product.imageUrl,
@@ -3850,15 +3877,19 @@ function SaveSettingsButton({
   syncStatus,
   label,
   savedLabel,
+  onClick,
 }: {
   syncStatus: "idle" | "syncing" | "saved" | "error";
   label: string;
   savedLabel: string;
+  onClick?: () => void;
 }) {
   return (
     <button
+      type={onClick ? "button" : "submit"}
       disabled={syncStatus === "syncing"}
-      className={`action-button flex h-11 items-center justify-center gap-2 rounded-lg text-sm font-black text-white disabled:cursor-wait lg:col-span-2 ${
+      onClick={onClick}
+      className={`action-button flex min-h-12 min-w-52 items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-black text-white disabled:cursor-wait lg:col-span-2 ${
         syncStatus === "saved" ? "bg-green-600" : syncStatus === "error" ? "bg-red-700" : "bg-neutral-950"
       }`}
     >
@@ -4080,7 +4111,7 @@ function Input(props: {
         disabled={props.disabled}
         placeholder={props.placeholder}
         onChange={(event) => props.onChange(event.target.value)}
-        className="h-11 min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-normal disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
+        className="h-11 w-full min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-normal disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
         required={props.required}
       />
     </label>
@@ -4183,7 +4214,7 @@ function Textarea(props: { label: string; value: string; onChange: (value: strin
         value={props.value}
         disabled={props.disabled}
         onChange={(event) => props.onChange(event.target.value)}
-        className="min-h-20 rounded-lg border border-neutral-300 bg-white px-3 py-2 font-normal disabled:cursor-not-allowed disabled:bg-white disabled:text-neutral-500"
+        className="min-h-20 w-full min-w-0 rounded-lg border border-neutral-300 bg-white px-3 py-2 font-normal disabled:cursor-not-allowed disabled:bg-white disabled:text-neutral-500"
       />
     </label>
   );
@@ -4337,7 +4368,7 @@ function SelectCategory(props: { categories: ProductCategory[]; value: CategoryI
   return (
     <label className="grid gap-1 text-sm font-bold">
       {props.label || "Categoría"}
-      <select value={props.value} onChange={(event) => props.onChange(event.target.value as CategoryId)} onBlur={props.onBlur} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-medium">
+      <select value={props.value} onChange={(event) => props.onChange(event.target.value as CategoryId)} onBlur={props.onBlur} className="h-10 w-full min-w-0 rounded-md border border-neutral-300 bg-white px-2 text-sm font-medium">
         {props.allowEmpty ? <option value="">Sin categoría</option> : null}
         {props.categories.map((category) => (
           <option key={category.id} value={category.id}>
@@ -4353,7 +4384,7 @@ function SelectBeerFormat(props: { value: "" | "latas" | "botellas"; onChange: (
   return (
     <label className="grid gap-1 text-sm font-bold">
       Formato de cerveza
-      <select value={props.value} required={props.required} onChange={(event) => props.onChange(event.target.value as "" | "latas" | "botellas")} className="h-10 rounded-md border border-neutral-300 bg-white px-2 text-sm font-medium">
+      <select value={props.value} required={props.required} onChange={(event) => props.onChange(event.target.value as "" | "latas" | "botellas")} className="h-10 w-full min-w-0 rounded-md border border-neutral-300 bg-white px-2 text-sm font-medium">
         <option value="">Selecciona lata o botella</option>
         <option value="latas">Latas</option>
         <option value="botellas">Botellas</option>

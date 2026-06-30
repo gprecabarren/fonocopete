@@ -14,7 +14,6 @@ create table if not exists public.products (
   beer_format text check (beer_format is null or beer_format in ('latas', 'botellas')),
   image_url text,
   volume text,
-  description text,
   stock text not null default 'available' check (stock in ('available', 'low', 'sold_out', 'hidden')),
   featured boolean not null default false,
   created_at timestamptz not null default now(),
@@ -86,12 +85,12 @@ on conflict (id) do update
 set label = excluded.label,
     sort_order = excluded.sort_order;
 
-insert into public.products (id, name, category_id, price, image_url, volume, description, stock, featured)
+insert into public.products (id, name, category_id, price, image_url, volume, stock, featured)
 values
-  ('promo-pisco-energetica', 'Promo Pisco + Energetica', 'promociones', 12990, 'https://images.unsplash.com/photo-1605270012917-bf157c5a9541?auto=format&fit=crop&w=900&q=80', '1 botella + 2 latas', 'Pack listo para compartir, frio segun disponibilidad.', 'available', true),
-  ('promo-six-pack', 'Six Pack Lager', 'promociones', 6990, 'https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=900&q=80', '6 x 355 cc', 'Cervezas rubias para llegar rapido al carrito.', 'available', true),
-  ('mistral-35', 'Mistral 35', 'piscos', 8990, 'https://images.unsplash.com/photo-1569529465841-dfecdab7503b?auto=format&fit=crop&w=900&q=80', '750 cc', 'Pisco suave para piscola o sour.', 'available', false),
-  ('kunstmann-torobayo', 'Kunstmann Torobayo', 'cervezas', 1790, 'https://images.unsplash.com/photo-1618885472179-5e474019f2a9?auto=format&fit=crop&w=900&q=80', '330 cc', 'Amber ale con cuerpo medio.', 'sold_out', false)
+  ('promo-pisco-energetica', 'Promo Pisco + Energetica', 'promociones', 12990, 'https://images.unsplash.com/photo-1605270012917-bf157c5a9541?auto=format&fit=crop&w=900&q=80', '1 botella + 2 latas', 'available', true),
+  ('promo-six-pack', 'Six Pack Lager', 'promociones', 6990, 'https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=900&q=80', '6 x 355 cc', 'available', true),
+  ('mistral-35', 'Mistral 35', 'piscos', 8990, 'https://images.unsplash.com/photo-1569529465841-dfecdab7503b?auto=format&fit=crop&w=900&q=80', '750 cc', 'available', false),
+  ('kunstmann-torobayo', 'Kunstmann Torobayo', 'cervezas', 1790, 'https://images.unsplash.com/photo-1618885472179-5e474019f2a9?auto=format&fit=crop&w=900&q=80', '330 cc', 'sold_out', false)
 on conflict (id) do nothing;
 
 insert into public.site_settings (key, value)

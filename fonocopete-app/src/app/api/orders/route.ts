@@ -39,6 +39,42 @@ function formatOrderNumber(value: number | string) {
   return `FM-${String(value).padStart(6, "0")}`;
 }
 
+function createMailConfig() {
+  const contactEmail = process.env.CONTACT_EMAIL || "contacto@fonocopeteconcepcion.cl";
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPassword = process.env.SMTP_PASSWORD;
+
+  if (smtpHost && smtpUser && smtpPassword) {
+    return {
+      transporter: nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: { user: smtpUser, pass: smtpPassword },
+      }),
+      from: process.env.SMTP_FROM || `"Fonocopete Concepción" <${contactEmail}>`,
+      ownerEmail: process.env.OWNER_EMAIL || contactEmail,
+      replyTo: contactEmail,
+    };
+  }
+
+  const gmailUser = process.env.GMAIL_USER;
+  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+  if (!gmailUser || !gmailAppPassword) return null;
+
+  return {
+    transporter: nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: gmailUser, pass: gmailAppPassword },
+    }),
+    from: `"Fonocopete Concepción" <${gmailUser}>`,
+    ownerEmail: process.env.OWNER_EMAIL || gmailUser,
+    replyTo: contactEmail,
+  };
+}
+
 export async function GET() {
   if (!(await requireAdmin())) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const supabase = createServerSupabaseClient();
@@ -97,9 +133,6 @@ export async function POST(request: Request) {
 
   const order: OrderPayload = parsed.data;
   const supabase = createServerSupabaseClient();
-  const gmailUser = process.env.GMAIL_USER;
-  const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
-  const ownerEmail = process.env.OWNER_EMAIL || gmailUser;
   let orderId: string | null = null;
 
   if (supabase) {
@@ -148,19 +181,18 @@ export async function POST(request: Request) {
     }
   }
 
-  if (!gmailUser || !gmailAppPassword || !ownerEmail) {
+  const mailConfig = createMailConfig();
+
+  if (!mailConfig) {
     return NextResponse.json({ ok: true, email: "skipped", orderId, orderNumber: order.orderNumber, source: supabase ? "supabase" : "demo" });
   }
 
-  const transporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: { user: gmailUser, pass: gmailAppPassword },
-  });
   const itemRows = order.items.map((item) => `${item.quantity}x ${item.name} - $${item.lineTotal}`).join("<br />");
 
-  await transporter.sendMail({
-    from: `"Fonocopete Concepción" <${gmailUser}>`,
-    to: ownerEmail,
+  await mailConfig.transporter.sendMail({
+    from: mailConfig.from,
+    to: mailConfig.ownerEmail,
+    replyTo: mailConfig.replyTo,
     subject: `Nuevo pedido Fonocopete - ${order.customer.name}`,
     html: `
       <h1>Nuevo pedido</h1>
@@ -177,9 +209,10 @@ export async function POST(request: Request) {
     `,
   });
 
-  await transporter.sendMail({
-    from: `"Fonocopete Concepción" <${gmailUser}>`,
+  await mailConfig.transporter.sendMail({
+    from: mailConfig.from,
     to: order.customer.email,
+    replyTo: mailConfig.replyTo,
     subject: "Confirmación de pedido Fonocopete",
     html: `
       <h1>Recibimos tu pedido</h1>

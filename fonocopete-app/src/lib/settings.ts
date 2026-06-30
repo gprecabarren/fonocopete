@@ -28,7 +28,7 @@ export const defaultSettings: SiteSettings = {
   maintenanceMessage:
     "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Inténtalo nuevamente más tarde.",
   whatsappNumber: process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "56989351855",
-  contactEmail: "fonocopeteconcepcion.maverik@gmail.com",
+  contactEmail: "contacto@fonocopeteconcepcion.cl",
   instagramUrl: "https://www.instagram.com/fonocopeteconcepcion.maverik/",
   facebookUrl: "https://www.facebook.com/",
   mercadoPagoLink: process.env.NEXT_PUBLIC_MERCADOPAGO_LINK || "https://www.mercadopago.cl/",
@@ -51,6 +51,13 @@ export const defaultSettings: SiteSettings = {
   },
   faqs: faqs.map((faq, index) => ({ id: `faq-${index + 1}`, ...faq })),
   coupons: [],
+  newsletter: {
+    enabled: false,
+    provider: "mailchimp",
+    audienceId: "",
+    formUrl: "",
+    defaultTags: "promociones, clientes web",
+  },
   productOrder: {},
   bankDetails: {
     bank: "Banco de Chile",

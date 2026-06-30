@@ -16,7 +16,6 @@ const productSchema = z
     beerFormat: z.enum(["latas", "botellas"]).nullable().optional(),
     imageUrl: z.string(),
     volume: z.string(),
-    description: z.string(),
     stock: z.enum(["available", "low", "sold_out", "hidden"]),
     featured: z.boolean().optional(),
   })
@@ -46,7 +45,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("products")
-    .select("id,name,category_id,secondary_category_id,price,original_price,beer_format,image_url,volume,description,stock,featured")
+    .select("id,name,category_id,secondary_category_id,price,original_price,beer_format,image_url,volume,stock,featured")
     .order("featured", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -78,7 +77,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("products")
     .upsert(products.map(mapProductToRow), { onConflict: "id" })
-    .select("id,name,category_id,secondary_category_id,price,original_price,beer_format,image_url,volume,description,stock,featured");
+    .select("id,name,category_id,secondary_category_id,price,original_price,beer_format,image_url,volume,stock,featured");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

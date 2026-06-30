@@ -17,6 +17,7 @@ function withRuntimeOverrides(settings: SiteSettings) {
     attendanceSchedule: settings.attendanceSchedule || defaultSettings.attendanceSchedule,
     productOrder: settings.productOrder || defaultSettings.productOrder,
     coupons: settings.coupons || defaultSettings.coupons,
+    newsletter: { ...defaultSettings.newsletter, ...settings.newsletter },
     whatsappNumber: ["56939351855", "56912345678"].includes(whatsappDigits)
       ? "56989351855"
       : settings.whatsappNumber,
@@ -76,6 +77,13 @@ const settingsSchema = z.object({
     minimumSubtotal: z.number().int().nonnegative(),
     description: z.string(),
   })),
+  newsletter: z.object({
+    enabled: z.boolean(),
+    provider: z.literal("mailchimp"),
+    audienceId: z.string(),
+    formUrl: z.string(),
+    defaultTags: z.string(),
+  }),
   productOrder: z.record(z.string(), z.array(z.string())),
   bankDetails: z.object({
     bank: z.string().min(1),

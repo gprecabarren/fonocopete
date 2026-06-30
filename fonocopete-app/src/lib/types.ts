@@ -16,7 +16,6 @@ export type Product = {
   beerFormat?: "latas" | "botellas" | null;
   imageUrl: string;
   volume: string;
-  description: string;
   stock: "available" | "low" | "sold_out" | "hidden";
   featured?: boolean;
 };
@@ -133,6 +132,14 @@ export type Coupon = {
   description: string;
 };
 
+export type NewsletterSettings = {
+  enabled: boolean;
+  provider: "mailchimp";
+  audienceId: string;
+  formUrl: string;
+  defaultTags: string;
+};
+
 export type AttendanceScheduleDay = {
   day: number;
   enabled: boolean;
@@ -161,6 +168,7 @@ export type SiteSettings = {
   seo: SeoSettings;
   faqs: FaqItem[];
   coupons: Coupon[];
+  newsletter: NewsletterSettings;
   bankDetails: BankDetails;
   productOrder: Record<string, string[]>;
 };

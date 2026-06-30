@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import crypto from "node:crypto";
 
 const sessionCookieName = "fonocopete_admin";
+export const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
 const defaultPasswordHash =
   "pbkdf2_sha256$210000$fonocopete-maverik-v1$N3wHlcB+6GBD0NtH+JGaLkwfULdVS/3fTrnnh7gdLyM=";
 
@@ -37,7 +38,7 @@ export function createSessionValue(username: string) {
   const payload = Buffer.from(
     JSON.stringify({
       username,
-      exp: Date.now() + 1000 * 60 * 60 * 12,
+      exp: Date.now() + 1000 * sessionMaxAgeSeconds,
     }),
   ).toString("base64url");
 
@@ -77,7 +78,7 @@ export async function setAdminSession(username: string) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 12,
+    maxAge: sessionMaxAgeSeconds,
   });
 }
 

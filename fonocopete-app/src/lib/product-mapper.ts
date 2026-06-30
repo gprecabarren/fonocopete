@@ -10,7 +10,6 @@ type ProductRow = {
   beer_format: Product["beerFormat"];
   image_url: string | null;
   volume: string | null;
-  description: string | null;
   stock: Product["stock"];
   featured: boolean | null;
 };
@@ -26,7 +25,6 @@ export function mapProductRow(row: ProductRow): Product {
     beerFormat: row.beer_format,
     imageUrl: row.image_url || "",
     volume: row.volume || "",
-    description: row.description || "",
     stock: row.stock,
     featured: Boolean(row.featured),
   };
@@ -43,7 +41,6 @@ export function mapProductToRow(product: Product) {
     beer_format: product.category === "cervezas" || product.secondaryCategory === "cervezas" ? product.beerFormat || null : null,
     image_url: product.imageUrl,
     volume: product.volume,
-    description: product.description,
     stock: product.stock,
     featured: Boolean(product.featured),
   };
