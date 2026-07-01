@@ -101,8 +101,27 @@ values (
     "maintenanceMode": false,
     "maintenanceMessage": "Fonocopete Penquista se encuentra temporalmente fuera de servicio. Estamos realizando mejoras para brindarte una mejor experiencia. Inténtalo nuevamente más tarde.",
     "whatsappNumber": "56989351855",
+    "contactEmail": "contacto@fonocopeteconcepcion.cl",
     "mercadoPagoLink": "https://www.mercadopago.cl/",
     "coupons": [],
+    "newsletter": {
+      "enabled": false,
+      "provider": "mailchimp",
+      "audienceId": "",
+      "formUrl": "",
+      "defaultTags": "promociones, clientes web"
+    },
+    "email": {
+      "transactionalEnabled": false,
+      "fromName": "Fonocopete Concepcion",
+      "fromEmail": "contacto@fonocopeteconcepcion.cl",
+      "ownerEmail": "contacto@fonocopeteconcepcion.cl",
+      "replyToEmail": "contacto@fonocopeteconcepcion.cl",
+      "smtpHost": "",
+      "smtpPort": "587",
+      "smtpUser": "",
+      "credentialsConfigured": false
+    },
     "bankDetails": {
       "bank": "Banco de Chile",
       "accountHolder": "Fonocopete Penquista",

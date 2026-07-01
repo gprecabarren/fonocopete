@@ -140,6 +140,18 @@ export type NewsletterSettings = {
   defaultTags: string;
 };
 
+export type EmailSettings = {
+  transactionalEnabled: boolean;
+  fromName: string;
+  fromEmail: string;
+  ownerEmail: string;
+  replyToEmail: string;
+  smtpHost: string;
+  smtpPort: string;
+  smtpUser: string;
+  credentialsConfigured: boolean;
+};
+
 export type AttendanceScheduleDay = {
   day: number;
   enabled: boolean;
@@ -169,6 +181,7 @@ export type SiteSettings = {
   faqs: FaqItem[];
   coupons: Coupon[];
   newsletter: NewsletterSettings;
+  email: EmailSettings;
   bankDetails: BankDetails;
   productOrder: Record<string, string[]>;
 };

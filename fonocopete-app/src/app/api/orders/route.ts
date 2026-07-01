@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
+import { defaultSettings } from "@/lib/settings";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import type { OrderPayload } from "@/lib/types";
+import type { OrderPayload, SiteSettings } from "@/lib/types";
 
 const orderSchema = z.object({
   customer: z.object({
@@ -39,12 +40,30 @@ function formatOrderNumber(value: number | string) {
   return `FM-${String(value).padStart(6, "0")}`;
 }
 
-function createMailConfig() {
-  const contactEmail = process.env.CONTACT_EMAIL || "contacto@fonocopeteconcepcion.cl";
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpPort = Number(process.env.SMTP_PORT || 587);
-  const smtpUser = process.env.SMTP_USER;
+async function loadEmailSettings(supabase: ReturnType<typeof createServerSupabaseClient>) {
+  if (!supabase) return { contactEmail: defaultSettings.contactEmail, email: defaultSettings.email };
+
+  const { data } = await supabase.from("site_settings").select("value").eq("key", "main").single();
+  const value = (data?.value || {}) as Partial<SiteSettings>;
+  return {
+    contactEmail: value.contactEmail || defaultSettings.contactEmail,
+    email: { ...defaultSettings.email, ...value.email },
+  };
+}
+
+function createMailConfig(settings: Awaited<ReturnType<typeof loadEmailSettings>>) {
+  const email = settings.email;
+  if (!email.transactionalEnabled) return null;
+
+  const contactEmail = settings.contactEmail || email.replyToEmail || "contacto@fonocopeteconcepcion.cl";
+  const smtpHost = process.env.SMTP_HOST || email.smtpHost;
+  const smtpPort = Number(process.env.SMTP_PORT || email.smtpPort || 587);
+  const smtpUser = process.env.SMTP_USER || email.smtpUser;
   const smtpPassword = process.env.SMTP_PASSWORD;
+  const fromEmail = email.fromEmail || contactEmail;
+  const fromName = email.fromName || "Fonocopete Concepción";
+  const ownerEmail = email.ownerEmail || process.env.OWNER_EMAIL || contactEmail;
+  const replyTo = email.replyToEmail || contactEmail;
 
   if (smtpHost && smtpUser && smtpPassword) {
     return {
@@ -52,11 +71,11 @@ function createMailConfig() {
         host: smtpHost,
         port: smtpPort,
         secure: smtpPort === 465,
-        auth: { user: smtpUser, pass: smtpPassword },
+          auth: { user: smtpUser, pass: smtpPassword },
       }),
-      from: process.env.SMTP_FROM || `"Fonocopete Concepción" <${contactEmail}>`,
-      ownerEmail: process.env.OWNER_EMAIL || contactEmail,
-      replyTo: contactEmail,
+      from: process.env.SMTP_FROM || `"${fromName}" <${fromEmail}>`,
+      ownerEmail,
+      replyTo,
     };
   }
 
@@ -69,9 +88,9 @@ function createMailConfig() {
       service: "gmail",
       auth: { user: gmailUser, pass: gmailAppPassword },
     }),
-    from: `"Fonocopete Concepción" <${gmailUser}>`,
-    ownerEmail: process.env.OWNER_EMAIL || gmailUser,
-    replyTo: contactEmail,
+    from: `"${fromName}" <${fromEmail || gmailUser}>`,
+    ownerEmail,
+    replyTo,
   };
 }
 
@@ -181,7 +200,8 @@ export async function POST(request: Request) {
     }
   }
 
-  const mailConfig = createMailConfig();
+  const emailSettings = await loadEmailSettings(supabase);
+  const mailConfig = createMailConfig(emailSettings);
 
   if (!mailConfig) {
     return NextResponse.json({ ok: true, email: "skipped", orderId, orderNumber: order.orderNumber, source: supabase ? "supabase" : "demo" });

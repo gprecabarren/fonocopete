@@ -63,7 +63,8 @@ const catalogStorageKey = "fonocopete.catalog";
 const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
 const productsPerCatalogPage = 15;
-type AdminView = "orders" | "catalog" | "categories" | "zones" | "coupons" | "faqs" | "settings" | "seo" | "analytics";
+const productsPerAdminPage = 20;
+type AdminView = "orders" | "catalog" | "categories" | "zones" | "coupons" | "settings" | "seo" | "faqs" | "emails" | "analytics";
 type ProductSortMode = "manual" | "price_asc" | "price_desc";
 type ImageCropOptions = { zoom: number; offsetX: number; offsetY: number };
 type AnalyticsRange = "day" | "month" | "year";
@@ -902,6 +903,7 @@ function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
     attendanceSchedule: settings.attendanceSchedule || defaultSettings.attendanceSchedule,
     coupons: settings.coupons || defaultSettings.coupons,
     newsletter: { ...defaultSettings.newsletter, ...settings.newsletter },
+    email: { ...defaultSettings.email, ...settings.email },
     productOrder: settings.productOrder || defaultSettings.productOrder,
     bankDetails: { ...defaultSettings.bankDetails, ...settings.bankDetails },
     seo: { ...defaultSettings.seo, ...settings.seo },
@@ -2041,6 +2043,7 @@ function AdminPanel(props: {
             <SegmentButton active={props.adminView === "zones"} onClick={() => props.setAdminView("zones")}>Zonas</SegmentButton>
             <SegmentButton active={props.adminView === "coupons"} onClick={() => props.setAdminView("coupons")}>Cupones</SegmentButton>
             <SegmentButton active={props.adminView === "settings"} onClick={() => props.setAdminView("settings")}>Ajustes</SegmentButton>
+            <SegmentButton active={props.adminView === "emails"} onClick={() => props.setAdminView("emails")}>Correos</SegmentButton>
             <SegmentButton active={props.adminView === "seo"} onClick={() => props.setAdminView("seo")}>SEO</SegmentButton>
             <SegmentButton active={props.adminView === "faqs"} onClick={() => props.setAdminView("faqs")}>FAQ</SegmentButton>
             <SegmentButton active={false} disabled onClick={() => undefined}>Visitas (Beta)</SegmentButton>
@@ -2066,6 +2069,8 @@ function AdminPanel(props: {
           <CouponsAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} syncStatus={props.syncStatus} />
         ) : props.adminView === "faqs" ? (
           <FaqAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} />
+        ) : props.adminView === "emails" ? (
+          <EmailAdmin settings={props.settings} onSaveSettings={props.onSaveSettings} syncStatus={props.syncStatus} />
         ) : props.adminView === "settings" ? (
           <SettingsAdmin
             key={`${props.settings.businessName}-${props.settings.maintenanceMode}-${props.settings.deliveryEnabled}-${props.settings.attendanceStatusEnabled}-${props.settings.isAttending}-${props.settings.attendanceScheduleEnabled}-${props.settings.minimumOrderAmount}`}
@@ -2624,7 +2629,7 @@ function CouponsAdmin({
               <option value="fixed">Monto fijo</option>
             </select>
           </label>
-          <Input label={draft.type === "percentage" ? "Porcentaje" : "Monto"} type="number" value={String(draft.value || "")} onChange={(value) => setDraft({ ...draft, value: Number(value) })} />
+          <AffixNumberInput label={draft.type === "percentage" ? "Porcentaje" : "Monto"} affix={draft.type === "percentage" ? "%" : "$"} affixPosition={draft.type === "percentage" ? "right" : "left"} value={String(draft.value || "")} onChange={(value) => setDraft({ ...draft, value: Number(value) })} />
           <Input label="Subtotal mínimo para usarlo" type="number" value={String(draft.minimumSubtotal || "")} onChange={(value) => setDraft({ ...draft, minimumSubtotal: Number(value) })} />
           <Textarea label="Descripción interna" value={draft.description} onChange={(value) => setDraft({ ...draft, description: value })} />
           <button className="action-button h-11 rounded-lg bg-neutral-950 text-sm font-black text-white">
@@ -2655,7 +2660,7 @@ function CouponsAdmin({
                 <option value="fixed">Monto</option>
               </select>
             </label>
-            <Input label="Valor" type="number" value={String(coupon.value)} onChange={(value) => updateCoupon(coupon, { ...coupon, value: Number(value) })} />
+            <AffixNumberInput label="Valor" affix={coupon.type === "percentage" ? "%" : "$"} affixPosition={coupon.type === "percentage" ? "right" : "left"} value={String(coupon.value)} onChange={(value) => updateCoupon(coupon, { ...coupon, value: Number(value) })} />
             <Input label="Subtotal mín." type="number" value={String(coupon.minimumSubtotal || "")} onChange={(value) => updateCoupon(coupon, { ...coupon, minimumSubtotal: Number(value) })} />
             <button
               type="button"
@@ -2709,6 +2714,7 @@ function orderMatchesDate(createdAt: string, mode: "day" | "month" | "year", val
 function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct: (productId: string, updater: (product: Product) => Product) => void }) {
   const [productView, setProductView] = useState("__latest");
   const [adminProductQuery, setAdminProductQuery] = useState("");
+  const [currentAdminProductPage, setCurrentAdminProductPage] = useState(1);
   const [imageMode, setImageMode] = useState<"upload" | "url">("upload");
   const [showDraftSecondaryCategory, setShowDraftSecondaryCategory] = useState(Boolean(props.draft.secondaryCategory));
   const [optimizeStatus, setOptimizeStatus] = useState("");
@@ -2746,6 +2752,22 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
         normalizeText(`${product.name} ${product.volume} ${product.category} ${product.secondaryCategory ?? ""}`).includes(cleanAdminProductQuery),
       )
     : baseAdminProducts;
+  const totalAdminProductPages = Math.max(1, Math.ceil(visibleAdminProducts.length / productsPerAdminPage));
+  const safeAdminProductPage = Math.min(currentAdminProductPage, totalAdminProductPages);
+  const paginatedAdminProducts = visibleAdminProducts.slice(
+    (safeAdminProductPage - 1) * productsPerAdminPage,
+    safeAdminProductPage * productsPerAdminPage,
+  );
+
+  function updateAdminProductQuery(value: string) {
+    setAdminProductQuery(value);
+    setCurrentAdminProductPage(1);
+  }
+
+  function updateProductView(value: string) {
+    setProductView(value);
+    setCurrentAdminProductPage(1);
+  }
 
   async function moveProductInCategory(productId: string, direction: -1 | 1) {
     if (productView.startsWith("__")) return;
@@ -2792,8 +2814,8 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
   }
 
   return (
-    <div className="grid min-w-0 gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-      <div className="grid min-w-0 gap-4">
+    <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+      <div className="grid min-w-0 content-start gap-4">
         <form onSubmit={props.onSubmit} className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
           <h3 className="mb-4 flex items-center gap-2 text-lg font-black">
             <Plus size={18} />
@@ -2886,7 +2908,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500" size={18} />
               <input
                 value={adminProductQuery}
-                onChange={(event) => setAdminProductQuery(event.target.value)}
+                onChange={(event) => updateAdminProductQuery(event.target.value)}
                 placeholder="Buscar producto subido"
                 className="h-11 w-full rounded-lg border border-neutral-300 bg-white pl-10 pr-3 text-sm font-bold"
               />
@@ -2895,25 +2917,25 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
           <div className="mb-3">
             <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-neutral-500">Vistas rápidas</p>
             <div className="flex max-w-full gap-2 overflow-x-auto pb-2">
-            <CatalogFilterButton active={productView === "__latest"} onClick={() => setProductView("__latest")}>
+            <CatalogFilterButton active={productView === "__latest"} onClick={() => updateProductView("__latest")}>
               Últimos 5
             </CatalogFilterButton>
-            <CatalogFilterButton active={productView === "__featured"} onClick={() => setProductView("__featured")}>
+            <CatalogFilterButton active={productView === "__featured"} onClick={() => updateProductView("__featured")}>
               Destacados ({featuredAdminProducts.length})
             </CatalogFilterButton>
-            <CatalogFilterButton active={productView === "__available"} onClick={() => setProductView("__available")}>
+            <CatalogFilterButton active={productView === "__available"} onClick={() => updateProductView("__available")}>
               Activos ({availableAdminProducts.length})
             </CatalogFilterButton>
-            <CatalogFilterButton active={productView === "__low"} onClick={() => setProductView("__low")}>
+            <CatalogFilterButton active={productView === "__low"} onClick={() => updateProductView("__low")}>
               Bajo stock ({lowStockAdminProducts.length})
             </CatalogFilterButton>
-            <CatalogFilterButton active={productView === "__sold_out"} onClick={() => setProductView("__sold_out")}>
+            <CatalogFilterButton active={productView === "__sold_out"} onClick={() => updateProductView("__sold_out")}>
               Agotados ({soldOutAdminProducts.length})
             </CatalogFilterButton>
-            <CatalogFilterButton active={productView === "__hidden"} onClick={() => setProductView("__hidden")}>
+            <CatalogFilterButton active={productView === "__hidden"} onClick={() => updateProductView("__hidden")}>
               Ocultos ({hiddenAdminProducts.length})
             </CatalogFilterButton>
-            <CatalogFilterButton active={productView === "__uncategorized"} onClick={() => setProductView("__uncategorized")}>
+            <CatalogFilterButton active={productView === "__uncategorized"} onClick={() => updateProductView("__uncategorized")}>
               Sin categoría ({uncategorizedProducts.length})
             </CatalogFilterButton>
             </div>
@@ -2922,14 +2944,20 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             <p className="mb-2 text-xs font-black uppercase tracking-[0.14em] text-neutral-500">Categorías</p>
             <div className="flex max-w-full gap-2 overflow-x-auto pb-2">
             {props.categories.map((category) => (
-              <CatalogFilterButton key={category.id} active={productView === category.id} onClick={() => setProductView(category.id)}>
+              <CatalogFilterButton key={category.id} active={productView === category.id} onClick={() => updateProductView(category.id)}>
                 {category.label} ({props.products.filter((product) => productBelongsToCategory(product, category.id)).length})
               </CatalogFilterButton>
             ))}
           </div>
         </div>
-        {visibleAdminProducts.length ? (
-          visibleAdminProducts.map((product) => (
+        <CatalogPagination
+          page={safeAdminProductPage}
+          totalPages={totalAdminProductPages}
+          countLabel={`${visibleAdminProducts.length} productos`}
+          onPage={setCurrentAdminProductPage}
+        />
+        {paginatedAdminProducts.length ? (
+          paginatedAdminProducts.map((product) => (
             <ProductAdminCard
               key={product.id}
               product={product}
@@ -2952,6 +2980,13 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             No hay productos en esta vista.
           </div>
         )}
+        <CatalogPagination
+          page={safeAdminProductPage}
+          totalPages={totalAdminProductPages}
+          countLabel={`${visibleAdminProducts.length} productos`}
+          onPage={setCurrentAdminProductPage}
+          bottom
+        />
       </div>
     </div>
   </div>
@@ -3490,6 +3525,143 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
   );
 }
 
+function EmailAdmin({
+  settings,
+  onSaveSettings,
+  syncStatus,
+}: {
+  settings: SiteSettings;
+  onSaveSettings: (settings: SiteSettings) => Promise<void>;
+  syncStatus: "idle" | "syncing" | "saved" | "error";
+}) {
+  const [draft, setDraft] = useState(settings);
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void onSaveSettings(draft);
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-5">
+      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-2xl font-black">Correos</h3>
+          <p className="mt-1 text-sm font-semibold text-neutral-600">
+            Configura confirmaciones de pedidos, remitentes y marketing por correo.
+          </p>
+        </div>
+        <SaveSettingsButton syncStatus={syncStatus} label="Guardar correos" savedLabel="Correos guardados" />
+      </div>
+
+      <SettingsSection title="Contacto visible" description="Datos de correo que ven los clientes en la tienda y enlaces de contacto.">
+        <Input
+          label="Correo de contacto"
+          type="email"
+          value={draft.contactEmail}
+          onChange={(contactEmail) => {
+            const nextEmail = { ...draft.email, fromEmail: contactEmail, ownerEmail: contactEmail, replyToEmail: contactEmail };
+            setDraft({ ...draft, contactEmail, email: nextEmail });
+          }}
+        />
+        <Input
+          label="Nombre remitente"
+          value={draft.email.fromName}
+          onChange={(fromName) => setDraft({ ...draft, email: { ...draft.email, fromName } })}
+        />
+      </SettingsSection>
+
+      <SettingsSection title="Correos de pedidos" description="Preparado para enviar confirmaciones al cliente y avisos internos al administrador.">
+        <BooleanControl
+          label="Envío automático de pedidos"
+          value={draft.email.transactionalEnabled}
+          onChange={(transactionalEnabled) => setDraft({ ...draft, email: { ...draft.email, transactionalEnabled } })}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="success"
+        />
+        <BooleanControl
+          label="Credenciales SMTP configuradas"
+          value={draft.email.credentialsConfigured}
+          onChange={(credentialsConfigured) => setDraft({ ...draft, email: { ...draft.email, credentialsConfigured } })}
+          activeLabel="Listo"
+          inactiveLabel="Pendiente"
+          activeTone="success"
+        />
+        <Input
+          label="Correo remitente"
+          type="email"
+          value={draft.email.fromEmail}
+          onChange={(fromEmail) => setDraft({ ...draft, email: { ...draft.email, fromEmail } })}
+        />
+        <Input
+          label="Correo administrador"
+          type="email"
+          value={draft.email.ownerEmail}
+          onChange={(ownerEmail) => setDraft({ ...draft, email: { ...draft.email, ownerEmail } })}
+        />
+        <Input
+          label="Responder a"
+          type="email"
+          value={draft.email.replyToEmail}
+          onChange={(replyToEmail) => setDraft({ ...draft, email: { ...draft.email, replyToEmail } })}
+        />
+        <Input
+          label="Servidor SMTP"
+          value={draft.email.smtpHost}
+          placeholder="smtp.tudominio.cl"
+          onChange={(smtpHost) => setDraft({ ...draft, email: { ...draft.email, smtpHost } })}
+        />
+        <Input
+          label="Puerto SMTP"
+          value={draft.email.smtpPort}
+          inputMode="numeric"
+          placeholder="587"
+          onChange={(smtpPort) => setDraft({ ...draft, email: { ...draft.email, smtpPort } })}
+        />
+        <Input
+          label="Usuario SMTP"
+          value={draft.email.smtpUser}
+          placeholder="contacto@fonocopeteconcepcion.cl"
+          onChange={(smtpUser) => setDraft({ ...draft, email: { ...draft.email, smtpUser } })}
+        />
+        <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
+          La clave SMTP se guarda como variable segura en Vercel. No se muestra en el panel para evitar exponer el correo del negocio.
+        </p>
+      </SettingsSection>
+
+      <SettingsSection title="Marketing por correo (Beta)" description="Configuración para promociones y campañas con Mailchimp.">
+        <BooleanControl
+          label="Newsletter Mailchimp (Beta)"
+          value={draft.newsletter.enabled}
+          onChange={(enabled) => setDraft({ ...draft, newsletter: { ...draft.newsletter, enabled } })}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="success"
+        />
+        <Input
+          label="URL formulario Mailchimp"
+          value={draft.newsletter.formUrl}
+          placeholder="https://..."
+          onChange={(formUrl) => setDraft({ ...draft, newsletter: { ...draft.newsletter, formUrl } })}
+        />
+        <Input
+          label="Audience ID"
+          value={draft.newsletter.audienceId}
+          placeholder="Se completa al crear la audiencia"
+          onChange={(audienceId) => setDraft({ ...draft, newsletter: { ...draft.newsletter, audienceId } })}
+        />
+        <Input
+          label="Etiquetas por defecto"
+          value={draft.newsletter.defaultTags}
+          onChange={(defaultTags) => setDraft({ ...draft, newsletter: { ...draft.newsletter, defaultTags } })}
+        />
+      </SettingsSection>
+
+      <SaveSettingsButton syncStatus={syncStatus} label="Guardar correos" savedLabel="Correos guardados" />
+    </form>
+  );
+}
+
 function SettingsAdmin({
   settings,
   products,
@@ -3634,36 +3806,6 @@ function SettingsAdmin({
         <div className="lg:col-span-2">
           <Textarea label="Mensaje inicial de WhatsApp (Beta)" value={draft.whatsappMessageIntro} onChange={() => undefined} disabled />
         </div>
-      </SettingsSection>
-      <SettingsSection title="Marketing por correo (Beta)" description="Preparado para conectar campañas y promociones con Mailchimp.">
-        <BooleanControl
-          label="Newsletter Mailchimp (Beta)"
-          value={draft.newsletter.enabled}
-          onChange={(enabled) => setDraft({ ...draft, newsletter: { ...draft.newsletter, enabled } })}
-          activeLabel="Activar"
-          inactiveLabel="Desactivar"
-          activeTone="success"
-        />
-        <Input
-          label="URL formulario Mailchimp"
-          value={draft.newsletter.formUrl}
-          placeholder="https://..."
-          onChange={(formUrl) => setDraft({ ...draft, newsletter: { ...draft.newsletter, formUrl } })}
-        />
-        <Input
-          label="Audience ID"
-          value={draft.newsletter.audienceId}
-          placeholder="Se completa al crear la audiencia"
-          onChange={(audienceId) => setDraft({ ...draft, newsletter: { ...draft.newsletter, audienceId } })}
-        />
-        <Input
-          label="Etiquetas por defecto"
-          value={draft.newsletter.defaultTags}
-          onChange={(defaultTags) => setDraft({ ...draft, newsletter: { ...draft.newsletter, defaultTags } })}
-        />
-        <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
-          Queda listo para conectar la API de Mailchimp y enviar promociones cuando tengamos la cuenta y la audiencia definitiva.
-        </p>
       </SettingsSection>
       <SettingsSection title="Datos bancarios para transferencia" description="Estos datos se muestran y se copian desde el proceso de pago.">
         <Input label="Banco" value={draft.bankDetails.bank} onChange={(value) => setDraft({ ...draft, bankDetails: { ...draft.bankDetails, bank: value } })} />
@@ -3889,7 +4031,7 @@ function SaveSettingsButton({
       type={onClick ? "button" : "submit"}
       disabled={syncStatus === "syncing"}
       onClick={onClick}
-      className={`action-button flex min-h-12 min-w-52 items-center justify-center gap-2 rounded-lg px-5 py-3 text-sm font-black text-white disabled:cursor-wait lg:col-span-2 ${
+      className={`action-button flex min-h-11 min-w-fit items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-black text-white disabled:cursor-wait lg:col-span-2 ${
         syncStatus === "saved" ? "bg-green-600" : syncStatus === "error" ? "bg-red-700" : "bg-neutral-950"
       }`}
     >
@@ -4114,6 +4256,46 @@ function Input(props: {
         className="h-11 w-full min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-normal disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
         required={props.required}
       />
+    </label>
+  );
+}
+
+function AffixNumberInput({
+  label,
+  value,
+  onChange,
+  affix,
+  affixPosition,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  affix: "$" | "%";
+  affixPosition: "left" | "right";
+}) {
+  return (
+    <label className="grid gap-1 text-sm font-bold">
+      {label}
+      <span className="flex min-w-0">
+        {affixPosition === "left" ? (
+          <span className="grid h-11 w-10 shrink-0 place-items-center rounded-l-lg border border-r-0 border-neutral-300 bg-neutral-50 text-sm font-black text-neutral-600">
+            {affix}
+          </span>
+        ) : null}
+        <input
+          type="number"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className={`h-11 w-full min-w-0 border border-neutral-300 bg-white px-3 font-normal ${
+            affixPosition === "left" ? "rounded-r-lg" : "rounded-l-lg"
+          }`}
+        />
+        {affixPosition === "right" ? (
+          <span className="grid h-11 w-10 shrink-0 place-items-center rounded-r-lg border border-l-0 border-neutral-300 bg-neutral-50 text-sm font-black text-neutral-600">
+            {affix}
+          </span>
+        ) : null}
+      </span>
     </label>
   );
 }

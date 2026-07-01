@@ -58,6 +58,17 @@ export const defaultSettings: SiteSettings = {
     formUrl: "",
     defaultTags: "promociones, clientes web",
   },
+  email: {
+    transactionalEnabled: false,
+    fromName: "Fonocopete Concepción",
+    fromEmail: "contacto@fonocopeteconcepcion.cl",
+    ownerEmail: "contacto@fonocopeteconcepcion.cl",
+    replyToEmail: "contacto@fonocopeteconcepcion.cl",
+    smtpHost: "",
+    smtpPort: "587",
+    smtpUser: "",
+    credentialsConfigured: false,
+  },
   productOrder: {},
   bankDetails: {
     bank: "Banco de Chile",
