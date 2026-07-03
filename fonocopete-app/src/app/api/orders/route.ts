@@ -34,6 +34,8 @@ const orderSchema = z.object({
   zoneName: z.string(),
   paymentLink: z.string(),
   paymentMethod: z.enum(["cash_on_delivery", "mercadopago", "transfer"]),
+  priceAdjustmentActive: z.boolean().optional(),
+  priceAdjustmentPercent: z.number().int().nonnegative().optional(),
 });
 
 function formatOrderNumber(value: number | string) {
@@ -127,6 +129,8 @@ export async function GET() {
       paymentStatus: order.payment_status,
       fulfillmentStatus: order.fulfillment_status,
       notes: order.notes || "",
+      priceAdjustmentActive: Boolean(order.price_adjustment_active),
+      priceAdjustmentPercent: order.price_adjustment_percent || 0,
       createdAt: order.created_at,
       items: order.order_items.map((item: {
         product_name: string;
@@ -173,6 +177,8 @@ export async function POST(request: Request) {
         total: order.total,
         payment_method: order.paymentMethod,
         payment_status: order.paymentMethod === "cash_on_delivery" ? "pending" : "paid",
+        price_adjustment_active: Boolean(order.priceAdjustmentActive),
+        price_adjustment_percent: order.priceAdjustmentActive ? order.priceAdjustmentPercent || 0 : 0,
         notes: order.customer.notes,
       })
       .select("id, order_number")
@@ -222,6 +228,7 @@ export async function POST(request: Request) {
       <p><strong>Dirección:</strong> ${order.customer.address}</p>
       <p><strong>Complemento:</strong> ${order.customer.addressExtra || "Sin complemento"}</p>
       <p><strong>Zona:</strong> ${order.zoneName}</p>
+      ${order.priceAdjustmentActive ? `<p><strong>Recargo temporal:</strong> ${order.priceAdjustmentPercent || 0}%</p>` : ""}
       <p>${itemRows}</p>
       <p><strong>Descuento:</strong> $${order.discount}</p>
       <p><strong>Total:</strong> $${order.total}</p>
@@ -238,6 +245,7 @@ export async function POST(request: Request) {
       <h1>Recibimos tu pedido</h1>
       <p>Hola ${order.customer.name}, tu pedido fue enviado a la botillería para confirmación.</p>
       <p>${itemRows}</p>
+      ${order.priceAdjustmentActive ? `<p><strong>Recargo temporal aplicado:</strong> ${order.priceAdjustmentPercent || 0}%</p>` : ""}
       <p><strong>Descuento:</strong> $${order.discount}</p>
       <p><strong>Total:</strong> $${order.total}</p>
       <p>Si aún no pagaste, usa este enlace: <a href="${order.paymentLink}">Mercado Pago</a>.</p>

@@ -69,3 +69,99 @@ html {
     font-size: 16px !important;
   }
 }
+
+.fonocopete-dark {
+  color-scheme: dark;
+  background: #090909;
+  color: #f5f5f5;
+}
+
+.fonocopete-dark header,
+.fonocopete-dark footer,
+.fonocopete-dark section:not(#promociones) {
+  background-color: #101010;
+  color: #f5f5f5;
+}
+
+.fonocopete-dark [class*="bg-[#f7f4ef]"],
+.fonocopete-dark .bg-white,
+.fonocopete-dark .bg-white\/80,
+.fonocopete-dark .bg-neutral-50,
+.fonocopete-dark .bg-neutral-100 {
+  background-color: #171717 !important;
+  color: #f5f5f5;
+}
+
+.fonocopete-dark .bg-neutral-950,
+.fonocopete-dark [class*="bg-neutral-950"] {
+  background-color: #050505 !important;
+}
+
+.fonocopete-dark .border-neutral-200,
+.fonocopete-dark .border-neutral-200\/70,
+.fonocopete-dark .border-neutral-200\/80,
+.fonocopete-dark .border-neutral-300 {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+.fonocopete-dark .text-neutral-950,
+.fonocopete-dark .text-neutral-900,
+.fonocopete-dark .text-neutral-800,
+.fonocopete-dark .text-neutral-700 {
+  color: #f5f5f5 !important;
+}
+
+.fonocopete-dark .text-neutral-600,
+.fonocopete-dark .text-neutral-500 {
+  color: #d4d4d4 !important;
+}
+
+.fonocopete-dark .text-neutral-400 {
+  color: #a3a3a3 !important;
+}
+
+.fonocopete-dark input,
+.fonocopete-dark select,
+.fonocopete-dark textarea {
+  background-color: #0f0f0f !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+  color: #f5f5f5 !important;
+}
+
+.fonocopete-dark input::placeholder,
+.fonocopete-dark textarea::placeholder {
+  color: #8a8a8a !important;
+}
+
+.fonocopete-dark button.bg-white,
+.fonocopete-dark a.bg-white,
+.fonocopete-dark .action-button.bg-white {
+  background-color: #1f1f1f !important;
+  color: #f5f5f5 !important;
+}
+
+.fonocopete-dark details,
+.fonocopete-dark article,
+.fonocopete-dark nav {
+  background-color: #171717 !important;
+  color: #f5f5f5;
+}
+
+.fonocopete-dark .shadow-2xl,
+.fonocopete-dark .shadow-lg,
+.fonocopete-dark .shadow-sm {
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45) !important;
+}
+
+.fonocopete-dark .bg-red-50 {
+  background-color: rgba(127, 29, 29, 0.35) !important;
+}
+
+.fonocopete-dark .bg-green-50,
+.fonocopete-dark .bg-green-100 {
+  background-color: rgba(20, 83, 45, 0.35) !important;
+}
+
+.fonocopete-dark .bg-amber-100 {
+  background-color: rgba(120, 53, 15, 0.45) !important;
+}

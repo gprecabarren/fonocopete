@@ -69,6 +69,15 @@ export const defaultSettings: SiteSettings = {
     smtpUser: "",
     credentialsConfigured: false,
   },
+  productPriceAdjustment: {
+    enabled: false,
+    percentage: 0,
+    scheduleEnabled: false,
+    startDate: "",
+    endDate: "",
+    startTime: "00:00",
+    endTime: "23:59",
+  },
   productOrder: {},
   bankDetails: {
     bank: "Banco de Chile",

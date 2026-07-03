@@ -24,12 +24,14 @@ import {
   Mail,
   Menu,
   Minus,
+  Moon,
   Plus,
   Save,
   Search,
   Settings,
   ShieldCheck,
   ShoppingCart,
+  Sun,
   Trash2,
   Upload,
   Wrench,
@@ -62,6 +64,7 @@ import type {
 const catalogStorageKey = "fonocopete.catalog";
 const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
+const themeStorageKey = "fonocopete.theme";
 const productsPerCatalogPage = 15;
 const productsPerAdminPage = 20;
 type AdminView = "orders" | "catalog" | "categories" | "zones" | "coupons" | "settings" | "seo" | "faqs" | "emails" | "analytics";
@@ -135,9 +138,14 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [query, setQuery] = useState("");
   const [customer, setCustomer] = useState<CustomerDetails>(emptyCustomer);
   const [orderStatus, setOrderStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [ageConfirmed, setAgeConfirmed] = useState(
-    () => typeof window !== "undefined" && window.localStorage.getItem(ageStorageKey) === "true",
-  );
+  const [ageConfirmed, setAgeConfirmed] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return readSafeLocalStorage(ageStorageKey) === "true";
+  });
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return readSafeLocalStorage(themeStorageKey) === "dark";
+  });
   const [draft, setDraft] = useState<Product>(productDraft);
   const [bulkText, setBulkText] = useState("");
   const [adminView, setAdminView] = useState<AdminView>("orders");
@@ -263,6 +271,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
     : productCategories[0]?.id || "promociones";
   const selectedZone = activeZones.find((zone) => zone.id === customer.zoneId);
   const activeZone = selectedZone ?? { ...initialDeliveryZones[0], id: "", name: "Selecciona zona", price: 0, eta: "" };
+  const priceAdjustment = getEffectivePriceAdjustment(settings, currentTime);
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
     const matchingProducts = products.filter((product) => {
@@ -279,8 +288,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         normalizeText(`${product.name} ${product.volume} ${product.category} ${product.secondaryCategory ?? ""} ${product.beerFormat ?? ""}`).includes(cleanQuery);
       return product.stock !== "hidden" && hasKnownCategory && matchesCategory && matchesBeerFormat && matchesQuery;
     });
-    return sortCatalogProducts(matchingProducts, productSortMode, settings.productOrder, resolvedActiveCategory);
-  }, [products, knownCategoryIds, resolvedActiveCategory, activeBeerFormat, query, productSortMode, settings.productOrder]);
+    return sortCatalogProducts(matchingProducts, productSortMode, settings.productOrder, resolvedActiveCategory, priceAdjustment);
+  }, [products, knownCategoryIds, resolvedActiveCategory, activeBeerFormat, query, productSortMode, settings.productOrder, priceAdjustment]);
   const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / productsPerCatalogPage));
   const safeProductPage = Math.min(currentProductPage, totalProductPages);
   const paginatedProducts = filteredProducts.slice(
@@ -296,9 +305,10 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const cartLines = cart
     .map((item) => {
       const product = products.find((entry) => entry.id === item.productId && entry.stock !== "sold_out");
-      return product ? { ...item, product, lineTotal: product.price * item.quantity } : null;
+      const unitPrice = applyPriceAdjustment(product?.price, priceAdjustment) || 0;
+      return product ? { ...item, product, unitPrice, lineTotal: unitPrice * item.quantity } : null;
     })
-    .filter(Boolean) as Array<CartItem & { product: Product; lineTotal: number }>;
+    .filter(Boolean) as Array<CartItem & { product: Product; unitPrice: number; lineTotal: number }>;
   const subtotal = cartLines.reduce((sum, item) => sum + item.lineTotal, 0);
   const appliedCoupon = findCoupon(settings.coupons, couponCode);
   const couponError = getCouponError(appliedCoupon, subtotal, settings.minimumOrderAmount);
@@ -308,8 +318,16 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   function confirmAge() {
-    window.localStorage.setItem(ageStorageKey, "true");
+    writeSafeLocalStorage(ageStorageKey, "true");
     setAgeConfirmed(true);
+  }
+
+  function toggleDarkMode() {
+    setDarkMode((current) => {
+      const next = !current;
+      writeSafeLocalStorage(themeStorageKey, next ? "dark" : "light");
+      return next;
+    });
   }
 
   function updateStoreQuery(value: string) {
@@ -447,7 +465,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       items: cartLines.map((item) => ({
         name: item.product.name,
         quantity: item.quantity,
-        unitPrice: item.product.price,
+        unitPrice: item.unitPrice,
         lineTotal: item.lineTotal,
       })),
       subtotal,
@@ -464,6 +482,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       paymentMethod,
       bankDetails: settings.bankDetails,
       whatsappMessageIntro: settings.whatsappMessageIntro,
+      priceAdjustmentActive: priceAdjustment.active,
+      priceAdjustmentPercent: priceAdjustment.active ? priceAdjustment.percentage : 0,
     };
   }
 
@@ -717,8 +737,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#f7f4ef] text-neutral-950">
-      {!ageConfirmed ? <AgeGate onConfirm={confirmAge} /> : null}
+    <main className={`min-h-screen overflow-x-hidden text-neutral-950 ${darkMode ? "fonocopete-dark bg-neutral-950" : "bg-[#f7f4ef]"}`}>
+      {ageConfirmed === false ? <AgeGate onConfirm={confirmAge} /> : null}
       {showPayment ? (
         <PaymentDialog
           settings={settings}
@@ -732,7 +752,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         />
       ) : null}
 
-      <Header settings={settings} cartCount={cartCount} />
+      <Header settings={settings} cartCount={cartCount} darkMode={Boolean(darkMode)} onToggleDarkMode={toggleDarkMode} />
       <FloatingWhatsApp whatsappNumber={settings.whatsappNumber} />
 
       <section id="promociones" className="relative isolate scroll-mt-20 overflow-hidden bg-neutral-950 text-white">
@@ -790,7 +810,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           </div>
           <div className="grid min-w-0 content-start gap-4">
             {featuredProducts.map((product) => (
-              <FeaturedProduct key={product.id} product={product} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
+              <FeaturedProduct key={product.id} product={product} priceAdjustment={priceAdjustment} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
             ))}
           </div>
         </div>
@@ -818,7 +838,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {paginatedProducts.length ? (
               paginatedProducts.map((product) => (
-                <ProductCard key={product.id} product={product} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
+                <ProductCard key={product.id} product={product} priceAdjustment={priceAdjustment} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
               ))
             ) : (
               <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center text-sm font-bold text-neutral-500 sm:col-span-2 xl:col-span-3">
@@ -875,13 +895,37 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
 
 function readLocal<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
-  const stored = window.localStorage.getItem(key);
+  const stored = readSafeLocalStorage(key);
   if (!stored) return fallback;
   try {
     return JSON.parse(stored) as T;
   } catch {
-    window.localStorage.removeItem(key);
+    removeSafeLocalStorage(key);
     return fallback;
+  }
+}
+
+function readSafeLocalStorage(key: string) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSafeLocalStorage(key: string, value: string) {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // La preferencia sigue funcionando durante la sesión aunque el navegador bloquee el almacenamiento.
+  }
+}
+
+function removeSafeLocalStorage(key: string) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Sin acción: algunos navegadores privados bloquean localStorage.
   }
 }
 
@@ -904,6 +948,7 @@ function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
     coupons: settings.coupons || defaultSettings.coupons,
     newsletter: { ...defaultSettings.newsletter, ...settings.newsletter },
     email: { ...defaultSettings.email, ...settings.email },
+    productPriceAdjustment: { ...defaultSettings.productPriceAdjustment, ...settings.productPriceAdjustment },
     productOrder: settings.productOrder || defaultSettings.productOrder,
     bankDetails: { ...defaultSettings.bankDetails, ...settings.bankDetails },
     seo: { ...defaultSettings.seo, ...settings.seo },
@@ -913,6 +958,13 @@ function mergeSettings(settings: Partial<SiteSettings>): SiteSettings {
 function minutesFromTime(value: string) {
   const [hours = "0", minutes = "0"] = value.split(":");
   return Number(hours) * 60 + Number(minutes);
+}
+
+function toLocalDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function getEffectiveAttendance(settings: SiteSettings, date: Date) {
@@ -926,6 +978,29 @@ function getEffectiveAttendance(settings: SiteSettings, date: Date) {
   if (open === close) return true;
   if (open < close) return now >= open && now < close;
   return now >= open || now < close;
+}
+
+function getEffectivePriceAdjustment(settings: SiteSettings, date: Date) {
+  const adjustment = { ...defaultSettings.productPriceAdjustment, ...settings.productPriceAdjustment };
+  const percentage = Math.max(0, Math.min(300, Math.round(Number(adjustment.percentage) || 0)));
+  if (!adjustment.enabled || percentage <= 0) return { active: false, percentage: 0 };
+  if (!adjustment.scheduleEnabled) return { active: true, percentage };
+
+  const dateLabel = toLocalDateInputValue(date);
+  if (adjustment.startDate && dateLabel < adjustment.startDate) return { active: false, percentage: 0 };
+  if (adjustment.endDate && dateLabel > adjustment.endDate) return { active: false, percentage: 0 };
+
+  const now = date.getHours() * 60 + date.getMinutes();
+  const start = minutesFromTime(adjustment.startTime || "00:00");
+  const end = minutesFromTime(adjustment.endTime || "23:59");
+  const matchesTime = start <= end ? now >= start && now <= end : now >= start || now <= end;
+  return matchesTime ? { active: true, percentage } : { active: false, percentage: 0 };
+}
+
+function applyPriceAdjustment(value: number | null | undefined, adjustment: { active: boolean; percentage: number }) {
+  if (!value) return value || null;
+  if (!adjustment.active || adjustment.percentage <= 0) return value;
+  return Math.max(1, Math.round(value * (1 + adjustment.percentage / 100)));
 }
 
 function productBelongsToCategory(product: Product, categoryId: string) {
@@ -942,12 +1017,18 @@ function productAvailabilityRank(product: Product) {
   return 1;
 }
 
-function sortCatalogProducts(products: Product[], sortMode: ProductSortMode, productOrder: Record<string, string[]>, viewCategory?: string) {
+function sortCatalogProducts(
+  products: Product[],
+  sortMode: ProductSortMode,
+  productOrder: Record<string, string[]>,
+  viewCategory?: string,
+  priceAdjustment: { active: boolean; percentage: number } = { active: false, percentage: 0 },
+) {
   return [...products].sort((a, b) => {
     const availability = productAvailabilityRank(a) - productAvailabilityRank(b);
     if (availability) return availability;
-    if (sortMode === "price_asc") return a.price - b.price;
-    if (sortMode === "price_desc") return b.price - a.price;
+    if (sortMode === "price_asc") return (applyPriceAdjustment(a.price, priceAdjustment) || a.price) - (applyPriceAdjustment(b.price, priceAdjustment) || b.price);
+    if (sortMode === "price_desc") return (applyPriceAdjustment(b.price, priceAdjustment) || b.price) - (applyPriceAdjustment(a.price, priceAdjustment) || a.price);
     const manual = productOrderIndexForCategory(a, productOrder, viewCategory) - productOrderIndexForCategory(b, productOrder, viewCategory);
     if (manual) return manual;
     return a.name.localeCompare(b.name, "es");
@@ -1070,7 +1151,17 @@ function resizeImageSource(src: string, crop: ImageCropOptions = { zoom: 1, offs
   });
 }
 
-function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: number }) {
+function Header({
+  settings,
+  cartCount,
+  darkMode,
+  onToggleDarkMode,
+}: {
+  settings: SiteSettings;
+  cartCount: number;
+  darkMode: boolean;
+  onToggleDarkMode: () => void;
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
   const links = [
     { href: "#catalogo", label: "Catálogo" },
@@ -1107,6 +1198,15 @@ function Header({ settings, cartCount }: { settings: SiteSettings; cartCount: nu
             <LogIn size={17} />
             Administrador
           </Link>
+          <button
+            type="button"
+            onClick={onToggleDarkMode}
+            aria-label={darkMode ? "Desactivar modo oscuro" : "Activar modo oscuro"}
+            title={darkMode ? "Desactivar modo oscuro" : "Activar modo oscuro"}
+            className="action-button grid size-11 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-950"
+          >
+            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
           <a href="#checkout" className="action-button inline-flex h-11 items-center gap-2 rounded-lg bg-red-600 px-3 text-sm font-bold text-white sm:px-4">
             <ShoppingCart size={18} />
             <span>{cartCount}</span>
@@ -1400,7 +1500,17 @@ function BusinessStatusSign({ isAttending }: { isAttending: boolean }) {
   );
 }
 
-function FeaturedProduct({ product, onAdd, added }: { product: Product; onAdd: () => void; added: boolean }) {
+function FeaturedProduct({
+  product,
+  priceAdjustment,
+  onAdd,
+  added,
+}: {
+  product: Product;
+  priceAdjustment: { active: boolean; percentage: number };
+  onAdd: () => void;
+  added: boolean;
+}) {
   const soldOut = product.stock === "sold_out";
   return (
     <button
@@ -1417,7 +1527,7 @@ function FeaturedProduct({ product, onAdd, added }: { product: Product; onAdd: (
         <span className="mt-1 block truncate text-lg font-black sm:text-xl">{product.name}</span>
         <span className="mt-1 block text-sm text-neutral-600">{product.volume}</span>
         <span className="mt-3 flex items-center justify-between gap-2">
-          <ProductPrice product={product} featured />
+          <ProductPrice product={product} priceAdjustment={priceAdjustment} featured />
           <span className={`grid size-10 shrink-0 place-items-center rounded-lg text-white transition ${added ? "bg-green-600" : "bg-neutral-950"}`}>
             {added ? <Check size={19} /> : <Plus size={19} />}
           </span>
@@ -1427,7 +1537,17 @@ function FeaturedProduct({ product, onAdd, added }: { product: Product; onAdd: (
   );
 }
 
-function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () => void; added: boolean }) {
+function ProductCard({
+  product,
+  priceAdjustment,
+  onAdd,
+  added,
+}: {
+  product: Product;
+  priceAdjustment: { active: boolean; percentage: number };
+  onAdd: () => void;
+  added: boolean;
+}) {
   const soldOut = product.stock === "sold_out";
   return (
     <article className="grid min-w-0 grid-cols-[112px_minmax(0,1fr)] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm sm:flex sm:h-full sm:flex-col">
@@ -1446,7 +1566,7 @@ function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () =>
             <p className="mt-1 text-xs font-semibold text-neutral-500 sm:text-sm">{product.volume}</p>
             {product.category === "cervezas" && product.beerFormat ? <p className="mt-1 text-xs font-black uppercase text-red-600">{product.beerFormat}</p> : null}
           </div>
-          <ProductPrice product={product} />
+          <ProductPrice product={product} priceAdjustment={priceAdjustment} />
         </div>
         <button
           type="button"
@@ -1464,22 +1584,32 @@ function ProductCard({ product, onAdd, added }: { product: Product; onAdd: () =>
   );
 }
 
-function ProductPrice({ product, featured = false }: { product: Product; featured?: boolean }) {
-  const hasDiscount = Boolean(product.originalPrice && product.originalPrice > product.price);
+function ProductPrice({
+  product,
+  priceAdjustment,
+  featured = false,
+}: {
+  product: Product;
+  priceAdjustment: { active: boolean; percentage: number };
+  featured?: boolean;
+}) {
+  const effectivePrice = applyPriceAdjustment(product.price, priceAdjustment) || product.price;
+  const effectiveOriginalPrice = applyPriceAdjustment(product.originalPrice, priceAdjustment);
+  const hasDiscount = Boolean(effectiveOriginalPrice && effectiveOriginalPrice > effectivePrice);
   return (
     <span className="shrink-0">
       {hasDiscount ? (
-        <span className="block text-xs font-bold text-neutral-400 line-through">{formatCurrency(product.originalPrice!)}</span>
+        <span className="block text-xs font-bold text-neutral-400 line-through">{formatCurrency(effectiveOriginalPrice!)}</span>
       ) : null}
       <span className={`block font-black text-red-600 ${featured ? "text-xl sm:text-2xl" : "text-base sm:text-lg"}`}>
-        {formatCurrency(product.price)}
+        {formatCurrency(effectivePrice)}
       </span>
     </span>
   );
 }
 
 function CheckoutPanel(props: {
-  cartLines: Array<CartItem & { product: Product; lineTotal: number }>;
+  cartLines: Array<CartItem & { product: Product; unitPrice: number; lineTotal: number }>;
   cartCount: number;
   customer: CustomerDetails;
   activeZone: { id: string; name: string; price: number; eta: string };
@@ -2008,9 +2138,9 @@ function AdminPanel(props: {
             <LogIn size={22} />
             Administración
           </h2>
-          <Input label="Usuario" value={login.username} onChange={(value) => setLogin({ ...login, username: value })} />
+          <Input label="Usuario" name="username" autoComplete="username" value={login.username} onChange={(value) => setLogin({ ...login, username: value })} />
           <div className="mt-3">
-            <Input label="Contraseña" type="password" value={login.password} onChange={(value) => setLogin({ ...login, password: value })} />
+            <Input label="Contraseña" name="current-password" autoComplete="current-password" type="password" value={login.password} onChange={(value) => setLogin({ ...login, password: value })} />
           </div>
           {loginError ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{loginError}</p> : null}
           <button className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
@@ -2312,6 +2442,11 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
                 {order.notes ? <p className="text-neutral-700">Notas: {order.notes}</p> : null}
                 <p className="text-neutral-700">Teléfono: {order.customerPhone}</p>
                 <p className="break-words text-neutral-700">Email: {order.customerEmail}</p>
+                {order.priceAdjustmentActive ? (
+                  <p className="rounded-md bg-amber-100 px-2 py-1 font-black text-amber-900">
+                    Compra realizada con recargo temporal activo: +{order.priceAdjustmentPercent}%
+                  </p>
+                ) : null}
                 <p className="text-neutral-700">Método de pago: {paymentMethodLabel(order.paymentMethod)}</p>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -2337,6 +2472,9 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
               </div>
               <div className="mt-3 grid gap-2 rounded-lg border border-neutral-200 p-3 text-sm">
                 <p className="flex justify-between gap-3"><span>Subtotal</span><strong>{formatCurrency(order.subtotal)}</strong></p>
+                {order.priceAdjustmentActive ? (
+                  <p className="flex justify-between gap-3 text-amber-800"><span>Recargo aplicado</span><strong>+{order.priceAdjustmentPercent}%</strong></p>
+                ) : null}
                 <p className="flex justify-between gap-3"><span>Despacho</span><strong>{formatCurrency(order.delivery)}</strong></p>
                 <p className="flex justify-between gap-3 border-t border-neutral-200 pt-2 text-lg font-black"><span>Total</span><span>{formatCurrency(order.total)}</span></p>
               </div>
@@ -2891,6 +3029,12 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
         </div>
       </div>
       <div className="grid content-start gap-4">
+        <ProductPriceAdjustmentAdmin
+          key={`${props.settings.productPriceAdjustment.enabled}-${props.settings.productPriceAdjustment.percentage}-${props.settings.productPriceAdjustment.scheduleEnabled}-${props.settings.productPriceAdjustment.startDate}-${props.settings.productPriceAdjustment.endDate}-${props.settings.productPriceAdjustment.startTime}-${props.settings.productPriceAdjustment.endTime}`}
+          settings={props.settings}
+          syncStatus={props.syncStatus}
+          onSaveSettings={props.onSaveSettings}
+        />
         <div className="min-w-0 overflow-hidden rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4">
           <div className="mb-3">
             <h3 className="text-lg font-black">Productos subidos</h3>
@@ -3248,6 +3392,85 @@ function StockSelect({ value, onChange }: { value: Product["stock"]; onChange: (
       <option value="sold_out">Agotado</option>
       <option value="hidden">Oculto</option>
     </select>
+  );
+}
+
+function ProductPriceAdjustmentAdmin({
+  settings,
+  onSaveSettings,
+  syncStatus,
+}: {
+  settings: SiteSettings;
+  onSaveSettings: (settings: SiteSettings) => Promise<void>;
+  syncStatus: "idle" | "syncing" | "saved" | "error";
+}) {
+  const [draft, setDraft] = useState(settings.productPriceAdjustment);
+  const effective = getEffectivePriceAdjustment({ ...settings, productPriceAdjustment: draft }, new Date());
+
+  function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (draft.enabled && draft.percentage <= 0) {
+      window.alert("Ingresa un porcentaje mayor a 0 para activar el recargo.");
+      return;
+    }
+    if (draft.scheduleEnabled && draft.startDate && draft.endDate && draft.endDate < draft.startDate) {
+      window.alert("La fecha de termino no puede ser anterior a la fecha de inicio.");
+      return;
+    }
+    void onSaveSettings({ ...settings, productPriceAdjustment: draft });
+  }
+
+  return (
+    <form onSubmit={save} className="grid gap-3 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 shadow-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-lg font-black">Recargo temporal de precios</h3>
+          <p className="mt-1 text-sm font-semibold text-neutral-600">
+            Sube todos los precios del catálogo sin modificar los valores guardados.
+          </p>
+          <p className={`mt-2 inline-flex rounded-md px-2 py-1 text-xs font-black ${effective.active ? "bg-green-100 text-green-800" : "bg-neutral-100 text-neutral-600"}`}>
+            {effective.active ? `Activo ahora: +${effective.percentage}%` : "Inactivo ahora"}
+          </p>
+        </div>
+        <SaveSettingsButton syncStatus={syncStatus} label="Guardar recargo" savedLabel="Recargo guardado" />
+      </div>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <BooleanControl
+          label="Función de recargo"
+          value={draft.enabled}
+          onChange={(enabled) => setDraft({ ...draft, enabled })}
+          activeLabel="Activar"
+          inactiveLabel="Desactivar"
+          activeTone="success"
+        />
+        <AffixNumberInput
+          label="Porcentaje de recargo"
+          value={String(draft.percentage || "")}
+          affix="%"
+          affixPosition="right"
+          onChange={(value) => setDraft({ ...draft, percentage: Math.max(0, Math.min(300, Number(value) || 0)) })}
+        />
+        <BooleanControl
+          label="Programar por fecha y hora"
+          value={draft.scheduleEnabled}
+          onChange={(scheduleEnabled) => setDraft({ ...draft, scheduleEnabled })}
+          activeLabel="Activar"
+          inactiveLabel="Manual"
+          activeTone="success"
+        />
+      </div>
+      {draft.scheduleEnabled ? (
+        <div className="grid gap-3 lg:grid-cols-4">
+          <Input label="Fecha inicio" type="date" value={draft.startDate} onChange={(startDate) => setDraft({ ...draft, startDate })} />
+          <Input label="Fecha termino" type="date" value={draft.endDate} onChange={(endDate) => setDraft({ ...draft, endDate })} />
+          <Input label="Hora inicio" type="time" value={draft.startTime} onChange={(startTime) => setDraft({ ...draft, startTime })} />
+          <Input label="Hora termino" type="time" value={draft.endTime} onChange={(endTime) => setDraft({ ...draft, endTime })} />
+        </div>
+      ) : null}
+      <p className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-neutral-600">
+        El recargo afecta precio normal y precio original/oferta solo al mostrar y comprar. No cambia la base de datos de productos ni los valores de despacho.
+      </p>
+    </form>
   );
 }
 
@@ -3866,6 +4089,8 @@ function BackupExportPanel({ products, orders, settings }: { products: Product[]
         "descuento",
         "cupon",
         "delivery",
+        "recargo_activo",
+        "recargo_porcentaje",
         "total",
         "metodo_pago",
         "estado_pago",
@@ -3886,6 +4111,8 @@ function BackupExportPanel({ products, orders, settings }: { products: Product[]
         order.discount,
         order.couponCode,
         order.delivery,
+        order.priceAdjustmentActive ? "si" : "no",
+        order.priceAdjustmentPercent,
         order.total,
         paymentMethodLabel(order.paymentMethod),
         paymentStatusMeta(order.paymentStatus).label,
@@ -4165,8 +4392,8 @@ export function AdminLoginMini({ onLogin }: { onLogin: () => void }) {
   return (
     <form onSubmit={submit} className="grid gap-3">
       <p className="font-black">Acceso administrador</p>
-      <Input label="Usuario" value={login.username} onChange={(value) => setLogin({ ...login, username: value })} />
-      <Input label="Contraseña" type="password" value={login.password} onChange={(value) => setLogin({ ...login, password: value })} />
+      <Input label="Usuario" name="username" autoComplete="username" value={login.username} onChange={(value) => setLogin({ ...login, username: value })} />
+      <Input label="Contraseña" name="current-password" autoComplete="current-password" type="password" value={login.password} onChange={(value) => setLogin({ ...login, password: value })} />
       {error ? <p className="text-sm font-bold text-red-700">{error}</p> : null}
       <button className="h-11 rounded-lg bg-neutral-950 text-sm font-black text-white">Entrar</button>
     </form>
@@ -4257,6 +4484,8 @@ function Input(props: {
   type?: string;
   required?: boolean;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  name?: string;
+  autoComplete?: string;
   placeholder?: string;
   disabled?: boolean;
 }) {
@@ -4265,6 +4494,8 @@ function Input(props: {
       {props.label}
       <input
         type={props.type || "text"}
+        name={props.name}
+        autoComplete={props.autoComplete}
         inputMode={props.inputMode}
         value={props.value}
         disabled={props.disabled}

@@ -52,6 +52,8 @@ create table if not exists public.orders (
   payment_method text not null default 'cash_on_delivery',
   payment_status text not null default 'pending',
   fulfillment_status text not null default 'new',
+  price_adjustment_active boolean not null default false,
+  price_adjustment_percent integer not null default 0 check (price_adjustment_percent >= 0 and price_adjustment_percent <= 300),
   notes text,
   created_at timestamptz not null default now()
 );
@@ -104,6 +106,15 @@ values (
     "contactEmail": "contacto@fonocopeteconcepcion.cl",
     "mercadoPagoLink": "https://www.mercadopago.cl/",
     "coupons": [],
+    "productPriceAdjustment": {
+      "enabled": false,
+      "percentage": 0,
+      "scheduleEnabled": false,
+      "startDate": "",
+      "endDate": "",
+      "startTime": "00:00",
+      "endTime": "23:59"
+    },
     "newsletter": {
       "enabled": false,
       "provider": "mailchimp",

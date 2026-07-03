@@ -19,6 +19,7 @@ function withRuntimeOverrides(settings: SiteSettings) {
     coupons: settings.coupons || defaultSettings.coupons,
     newsletter: { ...defaultSettings.newsletter, ...settings.newsletter },
     email: { ...defaultSettings.email, ...settings.email },
+    productPriceAdjustment: { ...defaultSettings.productPriceAdjustment, ...settings.productPriceAdjustment },
     whatsappNumber: ["56939351855", "56912345678"].includes(whatsappDigits)
       ? "56989351855"
       : settings.whatsappNumber,
@@ -95,6 +96,15 @@ const settingsSchema = z.object({
     smtpPort: z.string(),
     smtpUser: z.string(),
     credentialsConfigured: z.boolean(),
+  }),
+  productPriceAdjustment: z.object({
+    enabled: z.boolean(),
+    percentage: z.number().int().min(0).max(300),
+    scheduleEnabled: z.boolean(),
+    startDate: z.string(),
+    endDate: z.string(),
+    startTime: z.string().regex(/^\d{2}:\d{2}$/),
+    endTime: z.string().regex(/^\d{2}:\d{2}$/),
   }),
   productOrder: z.record(z.string(), z.array(z.string())),
   bankDetails: z.object({

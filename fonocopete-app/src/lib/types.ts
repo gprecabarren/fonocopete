@@ -69,6 +69,8 @@ export type OrderPayload = {
   orderNumber?: string;
   bankDetails?: BankDetails;
   whatsappMessageIntro?: string;
+  priceAdjustmentActive?: boolean;
+  priceAdjustmentPercent?: number;
 };
 
 export type SavedOrder = {
@@ -92,6 +94,8 @@ export type SavedOrder = {
   notes: string;
   createdAt: string;
   items: OrderLine[];
+  priceAdjustmentActive: boolean;
+  priceAdjustmentPercent: number;
 };
 
 export type FaqItem = {
@@ -152,6 +156,16 @@ export type EmailSettings = {
   credentialsConfigured: boolean;
 };
 
+export type ProductPriceAdjustmentSettings = {
+  enabled: boolean;
+  percentage: number;
+  scheduleEnabled: boolean;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+};
+
 export type AttendanceScheduleDay = {
   day: number;
   enabled: boolean;
@@ -182,6 +196,7 @@ export type SiteSettings = {
   coupons: Coupon[];
   newsletter: NewsletterSettings;
   email: EmailSettings;
+  productPriceAdjustment: ProductPriceAdjustmentSettings;
   bankDetails: BankDetails;
   productOrder: Record<string, string[]>;
 };

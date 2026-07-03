@@ -45,6 +45,7 @@ export function buildWhatsAppMessage(order: OrderPayload, purpose: "order" | "me
     "*Productos:*",
     productLines,
     "",
+    order.priceAdjustmentActive ? `Recargo temporal aplicado: +${order.priceAdjustmentPercent || 0}%` : "",
     `Subtotal: ${formatCurrency(order.subtotal)}`,
     order.discount > 0 ? `Cupón: ${order.couponCode || "Aplicado"} - ${formatCurrency(order.discount)}` : "",
     `Delivery: ${order.zoneName} - ${formatCurrency(order.delivery)}`,
