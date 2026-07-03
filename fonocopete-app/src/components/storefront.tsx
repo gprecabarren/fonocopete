@@ -152,6 +152,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [productSource, setProductSource] = useState<"local" | "supabase">("local");
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
+  const [adminSessionChecking, setAdminSessionChecking] = useState(true);
   const [showPayment, setShowPayment] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
@@ -226,6 +227,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         setAdminAuthenticated(data.authenticated);
         if (data.authenticated) void loadOrders();
       }
+      setAdminSessionChecking(false);
 
       if (zonesResponse.status === "fulfilled" && zonesResponse.value.ok) {
         const data = (await zonesResponse.value.json()) as { zones: DeliveryZone[]; source: "demo" | "supabase" };
@@ -707,6 +709,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         <AdminHeader businessName={settings.businessName} />
         <AdminPanel
           authenticated={adminAuthenticated}
+          sessionChecking={adminSessionChecking}
           setAuthenticated={setAdminAuthenticated}
           products={products}
           setProducts={setProducts}
@@ -2080,6 +2083,7 @@ function Detail({ label, value }: { label: string; value: string }) {
 
 function AdminPanel(props: {
   authenticated: boolean;
+  sessionChecking: boolean;
   setAuthenticated: (value: boolean) => void;
   products: Product[];
   setProducts: (products: Product[]) => void;
@@ -2131,6 +2135,19 @@ function AdminPanel(props: {
   }
 
   if (!props.authenticated) {
+    if (props.sessionChecking) {
+      return (
+        <section id="admin" className="border-y border-neutral-200 bg-white px-4 py-10 sm:px-6">
+          <div className="mx-auto max-w-sm rounded-lg border border-neutral-200 bg-[#f7f4ef] p-5 text-center">
+            <div className="mx-auto mb-3 grid size-11 place-items-center rounded-lg bg-neutral-950 text-white">
+              <ShieldCheck size={20} />
+            </div>
+            <p className="text-lg font-black">Verificando sesión</p>
+            <p className="mt-1 text-sm font-semibold text-neutral-600">Un momento mientras abrimos el panel.</p>
+          </div>
+        </section>
+      );
+    }
     return (
       <section id="admin" className="border-y border-neutral-200 bg-white px-4 py-10 sm:px-6">
         <form onSubmit={submitLogin} className="mx-auto max-w-sm rounded-lg border border-neutral-200 bg-[#f7f4ef] p-5">
@@ -3428,9 +3445,11 @@ function ProductPriceAdjustmentAdmin({
           <p className="mt-1 text-sm font-semibold text-neutral-600">
             Sube todos los precios del catálogo sin modificar los valores guardados.
           </p>
-          <p className={`mt-2 inline-flex rounded-md px-2 py-1 text-xs font-black ${effective.active ? "bg-green-100 text-green-800" : "bg-neutral-100 text-neutral-600"}`}>
-            {effective.active ? `Activo ahora: +${effective.percentage}%` : "Inactivo ahora"}
-          </p>
+          {effective.active ? (
+            <p className="mt-2 inline-flex rounded-md bg-green-100 px-2 py-1 text-xs font-black text-green-800">
+              Activo ahora: +{effective.percentage}%
+            </p>
+          ) : null}
         </div>
         <SaveSettingsButton syncStatus={syncStatus} label="Guardar recargo" savedLabel="Recargo guardado" />
       </div>
@@ -3443,23 +3462,27 @@ function ProductPriceAdjustmentAdmin({
           inactiveLabel="Desactivar"
           activeTone="success"
         />
-        <AffixNumberInput
-          label="Porcentaje de recargo"
-          value={String(draft.percentage || "")}
-          affix="%"
-          affixPosition="right"
-          onChange={(value) => setDraft({ ...draft, percentage: Math.max(0, Math.min(300, Number(value) || 0)) })}
-        />
-        <BooleanControl
-          label="Programar por fecha y hora"
-          value={draft.scheduleEnabled}
-          onChange={(scheduleEnabled) => setDraft({ ...draft, scheduleEnabled })}
-          activeLabel="Activar"
-          inactiveLabel="Manual"
-          activeTone="success"
-        />
+        {draft.enabled ? (
+          <>
+            <AffixNumberInput
+              label="Porcentaje de recargo"
+              value={String(draft.percentage || "")}
+              affix="%"
+              affixPosition="right"
+              onChange={(value) => setDraft({ ...draft, percentage: Math.max(0, Math.min(300, Number(value) || 0)) })}
+            />
+            <BooleanControl
+              label="Programar por fecha y hora"
+              value={draft.scheduleEnabled}
+              onChange={(scheduleEnabled) => setDraft({ ...draft, scheduleEnabled })}
+              activeLabel="Activar"
+              inactiveLabel="Manual"
+              activeTone="success"
+            />
+          </>
+        ) : null}
       </div>
-      {draft.scheduleEnabled ? (
+      {draft.enabled && draft.scheduleEnabled ? (
         <div className="grid gap-3 lg:grid-cols-4">
           <Input label="Fecha inicio" type="date" value={draft.startDate} onChange={(startDate) => setDraft({ ...draft, startDate })} />
           <Input label="Fecha termino" type="date" value={draft.endDate} onChange={(endDate) => setDraft({ ...draft, endDate })} />
@@ -3467,9 +3490,11 @@ function ProductPriceAdjustmentAdmin({
           <Input label="Hora termino" type="time" value={draft.endTime} onChange={(endTime) => setDraft({ ...draft, endTime })} />
         </div>
       ) : null}
-      <p className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-neutral-600">
-        El recargo afecta precio normal y precio original/oferta solo al mostrar y comprar. No cambia la base de datos de productos ni los valores de despacho.
-      </p>
+      {draft.enabled ? (
+        <p className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-neutral-600">
+          El recargo afecta precio normal y precio original/oferta solo al mostrar y comprar. No cambia la base de datos de productos ni los valores de despacho.
+        </p>
+      ) : null}
     </form>
   );
 }
@@ -3779,7 +3804,7 @@ function EmailAdmin({
             Confirmaciones de pedidos, remitentes y marketing por correo.
           </p>
         </div>
-        <SaveSettingsButton syncStatus={syncStatus} label="Guardar correos" savedLabel="Correos guardados" />
+        <SaveSettingsButton syncStatus={syncStatus} label="Guardar ajustes" savedLabel="Ajustes guardados" />
       </div>
 
       <SettingsSection title="Contacto visible" description="Datos que ven los clientes en la tienda y enlaces de contacto." columns={2}>
@@ -3886,7 +3911,7 @@ function EmailAdmin({
         />
       </SettingsSection>
 
-      <SaveSettingsButton syncStatus={syncStatus} label="Guardar correos" savedLabel="Correos guardados" />
+      <SaveSettingsButton syncStatus={syncStatus} label="Guardar ajustes" savedLabel="Ajustes guardados" />
     </form>
   );
 }
@@ -4175,12 +4200,12 @@ function SettingsSection({
 }) {
   const gridClass = columns === 3 ? "xl:grid-cols-3" : columns === 2 ? "lg:grid-cols-2" : "";
   return (
-    <section className="grid gap-3 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 shadow-sm">
-      <div className="rounded-lg bg-white px-3 py-2.5">
-        <p className="text-sm font-extrabold text-red-700">{title}</p>
-        <p className="text-sm font-semibold text-neutral-600">{description}</p>
+    <section className="space-y-3 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 shadow-sm">
+      <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2">
+        <p className="text-sm font-black text-red-700">{title}</p>
+        <p className="mt-0.5 text-xs font-semibold leading-snug text-neutral-600 sm:text-sm">{description}</p>
       </div>
-      <div className={`grid gap-3 ${gridClass}`}>
+      <div className={`grid items-start gap-3 ${gridClass}`}>
         {children}
       </div>
     </section>
