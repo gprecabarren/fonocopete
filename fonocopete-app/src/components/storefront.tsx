@@ -590,8 +590,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
       return;
     }
     if ((draft.category === "cervezas" || draft.secondaryCategory === "cervezas") && !draft.beerFormat) return;
-    if (hasDuplicateProductName(products, draft.name)) {
-      window.alert("Ya existe un producto con ese nombre.");
+    if (hasDuplicateProductNameAndVolume(products, draft.name, draft.volume, draft.id || undefined)) {
+      window.alert("Ya existe un producto con ese nombre y volumen.");
       return;
     }
 
@@ -954,10 +954,16 @@ function sortCatalogProducts(products: Product[], sortMode: ProductSortMode, pro
   });
 }
 
-function hasDuplicateProductName(products: Product[], name: string, currentId?: string) {
+function hasDuplicateProductNameAndVolume(products: Product[], name: string, volume: string, currentId?: string) {
   const cleanName = normalizeText(name);
-  if (!cleanName) return false;
-  return products.some((product) => product.id !== currentId && normalizeText(product.name) === cleanName);
+  const cleanVolume = normalizeText(volume || "Formato por definir");
+  if (!cleanName || !cleanVolume) return false;
+  return products.some(
+    (product) =>
+      product.id !== currentId &&
+      normalizeText(product.name) === cleanName &&
+      normalizeText(product.volume || "Formato por definir") === cleanVolume,
+  );
 }
 
 function productOrderIndexForCategory(product: Product, productOrder: Record<string, string[]>, categoryId?: string) {
@@ -3038,8 +3044,8 @@ function ProductAdminCard({
       window.alert("El precio original debe ser mayor que el precio normal.");
       return;
     }
-    if (hasDuplicateProductName(products, nextProduct.name, nextProduct.id)) {
-      window.alert("Ya existe otro producto con ese nombre.");
+    if (hasDuplicateProductNameAndVolume(products, nextProduct.name, nextProduct.volume, nextProduct.id)) {
+      window.alert("Ya existe otro producto con ese nombre y volumen.");
       return;
     }
     if (!categoryIds.has(nextProduct.category)) {
@@ -4599,10 +4605,12 @@ function OrderTotals({
         <span>Subtotal</span>
         <span>{formatCurrency(subtotal)}</span>
       </div>
-      <div className="mt-2 flex items-center justify-between text-sm font-bold text-neutral-600">
-        <span>Descuento</span>
-        <span>{discount > 0 ? `-${formatCurrency(discount)}` : formatCurrency(0)}</span>
-      </div>
+      {discount > 0 ? (
+        <div className="mt-2 flex items-center justify-between text-sm font-bold text-neutral-600">
+          <span>Descuento</span>
+          <span>-{formatCurrency(discount)}</span>
+        </div>
+      ) : null}
       <div className="mt-2 flex items-center justify-between text-sm font-bold text-neutral-600">
         <span>Delivery</span>
         <span>{deliveryEnabled ? formatCurrency(delivery) : "Sin cobro"}</span>
