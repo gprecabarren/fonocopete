@@ -3548,18 +3548,18 @@ function EmailAdmin({
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-5">
-      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h3 className="text-2xl font-black">Correos</h3>
-          <p className="mt-1 text-sm font-semibold text-neutral-600">
-            Configura confirmaciones de pedidos, remitentes y marketing por correo.
+    <form onSubmit={submit} className="grid gap-4">
+      <div className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-[#f7f4ef] px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-xl font-black">Correos</h3>
+          <p className="text-sm font-semibold text-neutral-600">
+            Confirmaciones de pedidos, remitentes y marketing por correo.
           </p>
         </div>
         <SaveSettingsButton syncStatus={syncStatus} label="Guardar correos" savedLabel="Correos guardados" />
       </div>
 
-      <SettingsSection title="Contacto visible" description="Datos de correo que ven los clientes en la tienda y enlaces de contacto.">
+      <SettingsSection title="Contacto visible" description="Datos que ven los clientes en la tienda y enlaces de contacto." columns={2}>
         <Input
           label="Correo de contacto"
           type="email"
@@ -3576,7 +3576,7 @@ function EmailAdmin({
         />
       </SettingsSection>
 
-      <SettingsSection title="Correos de pedidos" description="Preparado para enviar confirmaciones al cliente y avisos internos al administrador.">
+      <SettingsSection title="Correos de pedidos" description="Confirmaciones al cliente y avisos internos al administrador." columns={3}>
         <BooleanControl
           label="Envío automático de pedidos"
           value={draft.email.transactionalEnabled}
@@ -3630,12 +3630,12 @@ function EmailAdmin({
           placeholder="contacto@fonocopeteconcepcion.cl"
           onChange={(smtpUser) => setDraft({ ...draft, email: { ...draft.email, smtpUser } })}
         />
-        <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 lg:col-span-2">
+        <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 xl:col-span-3">
           La clave SMTP se guarda como variable segura en Vercel. No se muestra en el panel para evitar exponer el correo del negocio.
         </p>
       </SettingsSection>
 
-      <SettingsSection title="Marketing por correo (Beta)" description="Configuración para promociones y campañas con Mailchimp.">
+      <SettingsSection title="Marketing por correo (Beta)" description="Configuración para promociones y campañas con Mailchimp." columns={2}>
         <BooleanControl
           label="Newsletter Mailchimp (Beta)"
           value={draft.newsletter.enabled}
@@ -3935,14 +3935,25 @@ function ExportButton({ label, onClick }: { label: string; onClick: () => void }
   );
 }
 
-function SettingsSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function SettingsSection({
+  title,
+  description,
+  children,
+  columns = 2,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+  columns?: 1 | 2 | 3;
+}) {
+  const gridClass = columns === 3 ? "xl:grid-cols-3" : columns === 2 ? "lg:grid-cols-2" : "";
   return (
-    <section className="grid gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 shadow-sm">
-      <div className="rounded-lg bg-white p-4">
+    <section className="grid gap-3 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 shadow-sm">
+      <div className="rounded-lg bg-white px-3 py-2.5">
         <p className="text-sm font-extrabold text-red-700">{title}</p>
-        <p className="mt-1 text-sm font-semibold text-neutral-600">{description}</p>
+        <p className="text-sm font-semibold text-neutral-600">{description}</p>
       </div>
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className={`grid gap-3 ${gridClass}`}>
         {children}
       </div>
     </section>
@@ -4250,7 +4261,7 @@ function Input(props: {
   disabled?: boolean;
 }) {
   return (
-    <label className="grid gap-1 text-sm font-bold">
+    <label className="grid gap-0.5 text-sm font-bold">
       {props.label}
       <input
         type={props.type || "text"}
@@ -4259,7 +4270,7 @@ function Input(props: {
         disabled={props.disabled}
         placeholder={props.placeholder}
         onChange={(event) => props.onChange(event.target.value)}
-        className="h-11 w-full min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-normal disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
+        className="h-10 w-full min-w-0 rounded-lg border border-neutral-300 bg-white px-3 font-normal disabled:cursor-not-allowed disabled:bg-neutral-100 disabled:text-neutral-500"
         required={props.required}
       />
     </label>
@@ -4280,11 +4291,11 @@ function AffixNumberInput({
   affixPosition: "left" | "right";
 }) {
   return (
-    <label className="grid gap-1 text-sm font-bold">
+    <label className="grid gap-0.5 text-sm font-bold">
       {label}
       <span className="flex min-w-0">
         {affixPosition === "left" ? (
-          <span className="grid h-11 w-10 shrink-0 place-items-center rounded-l-lg border border-r-0 border-neutral-300 bg-neutral-50 text-sm font-black text-neutral-600">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-l-lg border border-r-0 border-neutral-300 bg-neutral-50 text-sm font-black text-neutral-600">
             {affix}
           </span>
         ) : null}
@@ -4292,12 +4303,12 @@ function AffixNumberInput({
           type="number"
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className={`h-11 w-full min-w-0 border border-neutral-300 bg-white px-3 font-normal ${
+          className={`h-10 w-full min-w-0 border border-neutral-300 bg-white px-3 font-normal ${
             affixPosition === "left" ? "rounded-r-lg" : "rounded-l-lg"
           }`}
         />
         {affixPosition === "right" ? (
-          <span className="grid h-11 w-10 shrink-0 place-items-center rounded-r-lg border border-l-0 border-neutral-300 bg-neutral-50 text-sm font-black text-neutral-600">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-r-lg border border-l-0 border-neutral-300 bg-neutral-50 text-sm font-black text-neutral-600">
             {affix}
           </span>
         ) : null}
