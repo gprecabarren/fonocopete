@@ -631,6 +631,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
         "https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=900&q=80",
       volume: draft.volume || "Formato por definir",
       originalPrice: draft.originalPrice && draft.price > 0 ? draft.originalPrice : null,
+      stock: draft.stock || "available",
     };
 
     const savedProducts = await persistProducts([nextProduct]);
@@ -3067,6 +3068,13 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
             ) : null}
             {(props.draft.category === "cervezas" || props.draft.secondaryCategory === "cervezas") ? <SelectBeerFormat value={props.draft.beerFormat || ""} onChange={(beerFormat) => props.setDraft({ ...props.draft, beerFormat: beerFormat || null })} required /> : null}
             <Input label="Volumen" placeholder="Ej: 750 ml, 1 L, 40°" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
+            <label className="grid gap-1 text-xs font-black uppercase text-neutral-500">
+              Estado del producto
+              <StockSelect
+                value={props.draft.stock || "available"}
+                onChange={(stock) => props.setDraft({ ...props.draft, stock })}
+              />
+            </label>
             <div className="grid gap-2">
               <span className="text-sm font-bold">Imagen del producto</span>
               <div className="grid min-w-0 grid-cols-2 gap-2">
