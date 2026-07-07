@@ -3067,7 +3067,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
               />
             ) : null}
             {(props.draft.category === "cervezas" || props.draft.secondaryCategory === "cervezas") ? <SelectBeerFormat value={props.draft.beerFormat || ""} onChange={(beerFormat) => props.setDraft({ ...props.draft, beerFormat: beerFormat || null })} required /> : null}
-            <Input label="Volumen" placeholder="Ej: 750 ml, 1 L, 40°" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
+            <Input label="Volumen" placeholder="Ej: 750ml, 1L, 40°" value={props.draft.volume} onChange={(value) => props.setDraft({ ...props.draft, volume: value })} />
             <label className="grid gap-1 text-xs font-black uppercase text-neutral-500">
               Estado del producto
               <StockSelect
@@ -3381,7 +3381,7 @@ function ProductAdminCard({
           ) : null}
           <input
             value={product.volume}
-            placeholder="Volumen: 750 ml, 1 L, 40°"
+            placeholder="Volumen: 750ml, 1L, 40°"
             onChange={(event) => update({ ...product, volume: event.target.value })}
             className="h-10 w-full min-w-0 rounded-md border border-neutral-300 px-2 text-sm font-normal"
           />
