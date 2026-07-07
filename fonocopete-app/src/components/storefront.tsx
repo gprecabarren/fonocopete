@@ -1177,22 +1177,22 @@ function Header({
   return (
     <>
     <header className="fixed inset-x-0 top-0 z-50 border-b border-neutral-200/80 bg-[#f7f4ef]/95 backdrop-blur supports-[backdrop-filter]:bg-[#f7f4ef]/85">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-4 sm:gap-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
             onClick={() => setMenuOpen((current) => !current)}
             aria-expanded={menuOpen}
             aria-label={menuOpen ? "Cerrar menú" : "Abrir menú"}
-            className="action-button grid size-11 shrink-0 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-950"
+            className="action-button grid size-10 shrink-0 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-950 sm:size-11"
           >
             {menuOpen ? <X size={21} /> : <Menu size={21} />}
           </button>
-          <a href="#catalogo" className="flex min-w-0 items-center gap-3">
-          <img src="/fonocopete-logo-circle.jpg" alt="" className="size-11 shrink-0 rounded-full border border-neutral-200 object-cover" />
-          <span className="min-w-0">
-            <span className="block truncate text-base font-black uppercase leading-tight tracking-wide sm:text-lg">Fonocopete</span>
-            <span className="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Botillería delivery</span>
+          <a href="#catalogo" className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <img src="/fonocopete-logo-circle.jpg" alt="" className="size-10 shrink-0 rounded-full border border-neutral-200 object-cover sm:size-11" />
+          <span className="min-w-0 max-w-[132px] sm:max-w-none">
+            <span className="block truncate text-sm font-black uppercase leading-tight tracking-wide sm:text-lg">Fonocopete</span>
+            <span className="block truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.13em] text-red-600 sm:text-xs sm:tracking-[0.18em]">Botillería delivery</span>
           </span>
           </a>
         </div>
@@ -1206,11 +1206,11 @@ function Header({
             onClick={onToggleDarkMode}
             aria-label={darkMode ? "Desactivar modo oscuro" : "Activar modo oscuro"}
             title={darkMode ? "Desactivar modo oscuro" : "Activar modo oscuro"}
-            className="action-button grid size-11 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-950"
+            className="action-button grid size-10 place-items-center rounded-lg border border-neutral-300 bg-white text-neutral-950 sm:size-11"
           >
             {darkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
-          <a href="#checkout" className="action-button inline-flex h-11 items-center gap-2 rounded-lg bg-red-600 px-3 text-sm font-bold text-white sm:px-4">
+          <a href="#checkout" className="action-button inline-flex h-10 items-center gap-2 rounded-lg bg-red-600 px-3 text-sm font-bold text-white sm:h-11 sm:px-4">
             <ShoppingCart size={18} />
             <span>{cartCount}</span>
           </a>
@@ -1238,7 +1238,7 @@ function Header({
         </nav>
       ) : null}
     </header>
-    <div className="mt-[68px] border-t border-neutral-200/70 bg-white/80">
+    <div className="mt-16 border-t border-neutral-200/70 bg-white/80">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
         <span className="text-xs font-black uppercase text-neutral-500">Encuéntranos</span>
         <SocialLinks settings={settings} className="flex" />
@@ -2533,12 +2533,25 @@ function OrdersAdmin({ orders, setOrders }: { orders: SavedOrder[]; setOrders: (
 
 function FaqAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSaveSettings: (settings: SiteSettings) => Promise<void> }) {
   const [items, setItems] = useState<FaqItem[]>(settings.faqs);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
   function moveFaq(index: number, direction: -1 | 1) {
     const nextIndex = index + direction;
     if (nextIndex < 0 || nextIndex >= items.length) return;
     const nextItems = [...items];
     [nextItems[index], nextItems[nextIndex]] = [nextItems[nextIndex], nextItems[index]];
     setItems(nextItems);
+  }
+
+  async function saveFaqs() {
+    setSaveStatus("syncing");
+    try {
+      await onSaveSettings({ ...settings, faqs: items });
+      setSaveStatus("saved");
+      window.setTimeout(() => setSaveStatus("idle"), 1800);
+    } catch {
+      setSaveStatus("error");
+      window.setTimeout(() => setSaveStatus("idle"), 3500);
+    }
   }
 
   return (
@@ -2549,14 +2562,17 @@ function FaqAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSave
           <h3 className="mt-1 text-xl font-black">Preguntas frecuentes</h3>
           <p className="mt-1 text-sm font-semibold text-neutral-300">Edita las dudas que verán los clientes antes de comprar.</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setItems([...items, { id: crypto.randomUUID(), question: "Nueva pregunta", answer: "Nueva respuesta" }])}
-          className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-black text-neutral-950"
-        >
-          <Plus size={18} />
-          Agregar pregunta
-        </button>
+        <div className="grid gap-2 sm:min-w-64">
+          <button
+            type="button"
+            onClick={() => setItems([...items, { id: crypto.randomUUID(), question: "Nueva pregunta", answer: "Nueva respuesta" }])}
+            className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-white px-4 text-sm font-black text-neutral-950"
+          >
+            <Plus size={18} />
+            Agregar pregunta
+          </button>
+          <FaqSaveButton saveStatus={saveStatus} onSave={saveFaqs} variant="light" />
+        </div>
       </div>
       {items.map((faq, index) => (
         <div key={faq.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 shadow-sm">
@@ -2593,8 +2609,44 @@ function FaqAdmin({ settings, onSaveSettings }: { settings: SiteSettings; onSave
           <button type="button" onClick={() => setItems(items.filter((item) => item.id !== faq.id))} className="action-button h-10 rounded-lg bg-red-50 text-sm font-black text-red-700">Eliminar</button>
         </div>
       ))}
-      <button type="button" onClick={() => void onSaveSettings({ ...settings, faqs: items })} className="action-button h-11 rounded-lg bg-neutral-950 text-sm font-black text-white">Guardar preguntas frecuentes</button>
+      <FaqSaveButton saveStatus={saveStatus} onSave={saveFaqs} />
     </div>
+  );
+}
+
+function FaqSaveButton({
+  saveStatus,
+  onSave,
+  variant = "dark",
+}: {
+  saveStatus: "idle" | "syncing" | "saved" | "error";
+  onSave: () => Promise<void>;
+  variant?: "dark" | "light";
+}) {
+  const toneClass =
+    saveStatus === "saved"
+      ? "bg-green-600 text-white"
+      : saveStatus === "error"
+        ? "bg-red-700 text-white"
+        : variant === "light"
+          ? "bg-white text-neutral-950"
+          : "bg-neutral-950 text-white";
+  return (
+    <button
+      type="button"
+      disabled={saveStatus === "syncing"}
+      onClick={() => void onSave()}
+      className={`action-button flex min-h-11 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-black disabled:cursor-wait ${toneClass}`}
+    >
+      {saveStatus === "saved" ? <Check size={18} /> : <Save size={18} />}
+      {saveStatus === "syncing"
+        ? "Guardando..."
+        : saveStatus === "saved"
+          ? "Preguntas guardadas"
+          : saveStatus === "error"
+            ? "Reintentar guardado"
+            : "Guardar preguntas frecuentes"}
+    </button>
   );
 }
 
