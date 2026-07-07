@@ -11,7 +11,8 @@ export async function POST(request: Request) {
   const parsed = loginSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: "Credenciales inválidas" }, { status: 400 });
 
-  const username = process.env.ADMIN_USERNAME || "bodegon";
+  const username = process.env.ADMIN_USERNAME;
+  if (!username) return NextResponse.json({ error: "Administrador no configurado" }, { status: 500 });
   if (parsed.data.username.trim().toLocaleLowerCase("es") !== username.trim().toLocaleLowerCase("es") || !verifyPassword(parsed.data.password)) {
     return NextResponse.json({ error: "Usuario o contraseña incorrectos" }, { status: 401 });
   }

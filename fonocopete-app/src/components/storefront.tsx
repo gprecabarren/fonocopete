@@ -2110,7 +2110,7 @@ function AdminPanel(props: {
   setOrders: (orders: SavedOrder[]) => void;
   onReloadOrders: () => Promise<void>;
 }) {
-  const [login, setLogin] = useState({ username: "bodegon", password: "" });
+  const [login, setLogin] = useState({ username: "", password: "" });
   const [loginError, setLoginError] = useState("");
 
   async function submitLogin(event: FormEvent<HTMLFormElement>) {
@@ -2123,7 +2123,7 @@ function AdminPanel(props: {
     if (response.ok) {
       props.setAuthenticated(true);
       void props.onReloadOrders();
-      setLogin({ username: "bodegon", password: "" });
+      setLogin({ username: "", password: "" });
       setLoginError("");
     } else {
       setLoginError("Usuario o contraseña incorrectos.");
@@ -4460,7 +4460,7 @@ function MaintenanceScreen({ message }: { message: string }) {
 }
 
 export function AdminLoginMini({ onLogin }: { onLogin: () => void }) {
-  const [login, setLogin] = useState({ username: "bodegon", password: "" });
+  const [login, setLogin] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {

@@ -3,11 +3,12 @@ import crypto from "node:crypto";
 
 const sessionCookieName = "fonocopete_admin";
 export const sessionMaxAgeSeconds = 60 * 60 * 24 * 7;
-const defaultPasswordHash =
-  "pbkdf2_sha256$210000$fonocopete-maverik-v1$N3wHlcB+6GBD0NtH+JGaLkwfULdVS/3fTrnnh7gdLyM=";
 
 function getSecret() {
-  return process.env.ADMIN_SESSION_SECRET || "fonocopete-local-session-secret-change-me";
+  const secret = process.env.ADMIN_SESSION_SECRET;
+  if (secret) return secret;
+  if (process.env.NODE_ENV !== "production") return "fonocopete-local-session-secret-change-me";
+  throw new Error("ADMIN_SESSION_SECRET is required in production");
 }
 
 function timingSafeEqual(a: string, b: string) {
@@ -18,7 +19,8 @@ function timingSafeEqual(a: string, b: string) {
 
 export function verifyPassword(password: string) {
   const configuredHash = (process.env.ADMIN_PASSWORD_HASH || "").trim().replace(/^["']|["']$/g, "");
-  const encoded = configuredHash.split("$").length === 4 ? configuredHash : defaultPasswordHash;
+  if (configuredHash.split("$").length !== 4) return false;
+  const encoded = configuredHash;
   const [algorithm, iterations, salt, expectedHash] = encoded.split("$");
 
   if (algorithm !== "pbkdf2_sha256" || !iterations || !salt || !expectedHash) return false;

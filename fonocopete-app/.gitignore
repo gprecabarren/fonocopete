@@ -31,6 +31,14 @@ yarn-error.log*
 .pnpm-debug.log*
 dev-server*.log
 
+# local maintenance exports/backups
+product-audit-*.csv
+product-backup-*.json
+product-normalization-*.csv
+product-volume-*.csv
+*-backup.json
+*-export.csv
+
 # env files (can opt-in for committing if needed)
 .env*
 !.env.example
