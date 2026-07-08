@@ -4557,7 +4557,7 @@ function InfoSections({ settings }: { settings: SiteSettings }) {
   return (
     <footer className="bg-[#f7f4ef]">
       <div className="mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-2">
-        <section id="faq">
+        <div id="faq" className="scroll-mt-24">
           <h2 className="mb-4 text-3xl font-black">Preguntas frecuentes</h2>
           <div className="grid gap-3">
             {settings.faqs.map((faq) => (
@@ -4567,7 +4567,7 @@ function InfoSections({ settings }: { settings: SiteSettings }) {
               </details>
             ))}
           </div>
-        </section>
+        </div>
         <section id="terminos" className="rounded-lg border border-neutral-200 bg-neutral-950 p-6 text-white">
           <h2 className="mb-4 text-3xl font-black">Términos</h2>
           <div className="grid gap-4 text-sm leading-7 text-neutral-300">
