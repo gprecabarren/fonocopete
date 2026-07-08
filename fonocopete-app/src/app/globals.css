@@ -83,6 +83,10 @@ html {
   color: #f5f5f5;
 }
 
+.fonocopete-dark #faq {
+  background-color: transparent !important;
+}
+
 .fonocopete-dark [class*="bg-[#f7f4ef]"],
 .fonocopete-dark .bg-white,
 .fonocopete-dark .bg-white\/80,
