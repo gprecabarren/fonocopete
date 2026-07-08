@@ -200,3 +200,11 @@ export type SiteSettings = {
   bankDetails: BankDetails;
   productOrder: Record<string, string[]>;
 };
+
+export type StorefrontInitialData = {
+  source: "demo" | "supabase";
+  products: Product[];
+  categories: ProductCategory[];
+  deliveryZones: DeliveryZone[];
+  settings: SiteSettings;
+};

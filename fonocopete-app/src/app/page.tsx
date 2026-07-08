@@ -1,7 +1,12 @@
 import { Storefront } from "@/components/storefront";
+import { loadStorefrontInitialData } from "@/lib/server-storefront-data";
 import { siteUrl } from "@/lib/site";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export default async function Home() {
+  const initialData = await loadStorefrontInitialData();
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "LiquorStore",
@@ -25,7 +30,7 @@ export default function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }}
       />
-      <Storefront />
+      <Storefront initialData={initialData} />
     </>
   );
 }

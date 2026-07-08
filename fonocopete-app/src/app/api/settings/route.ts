@@ -4,6 +4,10 @@ import { requireAdmin } from "@/lib/auth";
 import { defaultSettings } from "@/lib/settings";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import type { SiteSettings } from "@/lib/types";
+import { noStoreHeaders } from "@/lib/no-store";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 let demoSettings: SiteSettings = defaultSettings;
 
@@ -119,12 +123,12 @@ const settingsSchema = z.object({
 
 export async function GET() {
   const supabase = createServerSupabaseClient();
-  if (!supabase) return NextResponse.json({ settings: withRuntimeOverrides(demoSettings), source: "demo" });
+  if (!supabase) return NextResponse.json({ settings: withRuntimeOverrides(demoSettings), source: "demo" }, { headers: noStoreHeaders });
 
   const { data, error } = await supabase.from("site_settings").select("value").eq("key", "main").single();
-  if (error || !data?.value) return NextResponse.json({ settings: withRuntimeOverrides(defaultSettings), source: "supabase" });
+  if (error || !data?.value) return NextResponse.json({ settings: withRuntimeOverrides(defaultSettings), source: "supabase" }, { headers: noStoreHeaders });
 
-  return NextResponse.json({ settings: withRuntimeOverrides({ ...defaultSettings, ...data.value }), source: "supabase" });
+  return NextResponse.json({ settings: withRuntimeOverrides({ ...defaultSettings, ...data.value }), source: "supabase" }, { headers: noStoreHeaders });
 }
 
 export async function PATCH(request: Request) {

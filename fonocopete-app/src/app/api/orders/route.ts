@@ -5,6 +5,10 @@ import { requireAdmin } from "@/lib/auth";
 import { defaultSettings } from "@/lib/settings";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 import type { OrderPayload, SiteSettings } from "@/lib/types";
+import { noStoreHeaders } from "@/lib/no-store";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const orderSchema = z.object({
   customer: z.object({
@@ -97,9 +101,9 @@ function createMailConfig(settings: Awaited<ReturnType<typeof loadEmailSettings>
 }
 
 export async function GET() {
-  if (!(await requireAdmin())) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  if (!(await requireAdmin())) return NextResponse.json({ error: "No autorizado" }, { status: 401, headers: noStoreHeaders });
   const supabase = createServerSupabaseClient();
-  if (!supabase) return NextResponse.json({ orders: [], source: "demo" });
+  if (!supabase) return NextResponse.json({ orders: [], source: "demo" }, { headers: noStoreHeaders });
 
   const { data, error } = await supabase
     .from("orders")
@@ -144,7 +148,7 @@ export async function GET() {
         lineTotal: item.line_total,
       })),
     })),
-  });
+  }, { headers: noStoreHeaders });
 }
 
 export async function POST(request: Request) {

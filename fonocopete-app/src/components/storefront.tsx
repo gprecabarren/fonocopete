@@ -59,6 +59,7 @@ import type {
   SavedOrder,
   AttendanceScheduleDay,
   SiteSettings,
+  StorefrontInitialData,
 } from "@/lib/types";
 
 const catalogStorageKey = "fonocopete.catalog";
@@ -69,6 +70,7 @@ const productsPerCatalogPage = 15;
 const productsPerAdminPage = 20;
 type AdminView = "orders" | "catalog" | "categories" | "zones" | "coupons" | "settings" | "seo" | "faqs" | "emails" | "analytics";
 type ProductSortMode = "manual" | "price_asc" | "price_desc";
+type ProductSource = "loading" | "local" | "supabase" | "error";
 type ImageCropOptions = { zoom: number; offsetX: number; offsetY: number };
 type AnalyticsRange = "day" | "month" | "year";
 type AnalyticsSummary = {
@@ -126,10 +128,10 @@ const productDraft: Product = {
   stock: "available",
 };
 
-export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
-  const [products, setProducts] = useState<Product[]>(() => cleanProducts(readLocal(catalogStorageKey, initialProducts)));
-  const [productCategories, setProductCategories] = useState<ProductCategory[]>(categories);
-  const [settings, setSettings] = useState<SiteSettings>(() => mergeSettings(readLocal(settingsStorageKey, defaultSettings)));
+export function Storefront({ mode = "store", initialData }: { mode?: "store" | "admin"; initialData?: StorefrontInitialData }) {
+  const [products, setProducts] = useState<Product[]>(() => cleanProducts(initialData?.products ?? []));
+  const [productCategories, setProductCategories] = useState<ProductCategory[]>(() => initialData ? (initialData.categories.length ? initialData.categories : categories) : categories);
+  const [settings, setSettings] = useState<SiteSettings>(() => mergeSettings(initialData?.settings ?? defaultSettings));
   const [cart, setCart] = useState<CartItem[]>([]);
   const [activeCategory, setActiveCategory] = useState<CategoryId>("promociones");
   const [activeBeerFormat, setActiveBeerFormat] = useState<"all" | "latas" | "botellas">("all");
@@ -149,14 +151,15 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [draft, setDraft] = useState<Product>(productDraft);
   const [bulkText, setBulkText] = useState("");
   const [adminView, setAdminView] = useState<AdminView>("orders");
-  const [productSource, setProductSource] = useState<"local" | "supabase">("local");
+  const [productSource, setProductSource] = useState<ProductSource>(initialData?.source === "supabase" ? "supabase" : initialData ? "local" : "loading");
+  const [catalogLoading, setCatalogLoading] = useState(!initialData);
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [adminSessionChecking, setAdminSessionChecking] = useState(true);
   const [showPayment, setShowPayment] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
   const [addedProductId, setAddedProductId] = useState<string | null>(null);
-  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(initialDeliveryZones);
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>(() => initialData ? initialData.deliveryZones : initialDeliveryZones);
   const [zoneStatus, setZoneStatus] = useState("");
   const [addressResults, setAddressResults] = useState<Array<{
     formattedAddress: string;
@@ -175,7 +178,8 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   const [couponStatus, setCouponStatus] = useState("");
 
   useEffect(() => {
-    if (productSource === "local") window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
+    if (productSource === "local" && products.length) window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
+    if (productSource === "supabase") removeSafeLocalStorage(catalogStorageKey);
   }, [products, productSource]);
 
   useEffect(() => {
@@ -197,41 +201,89 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
   }, [mode]);
 
   useEffect(() => {
-    async function boot() {
-      const [productResponse, settingsResponse, sessionResponse, zonesResponse, categoriesResponse] = await Promise.allSettled([
-        fetch("/api/products"),
-        fetch("/api/settings"),
-        fetch("/api/admin/session"),
-        fetch("/api/delivery-zones"),
-        fetch("/api/categories"),
+    let active = true;
+
+    async function checkSession() {
+      if (mode !== "admin") {
+        setAdminSessionChecking(false);
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/admin/session", {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        });
+        if (!active || !response.ok) return;
+        const data = (await response.json()) as { authenticated: boolean };
+        setAdminAuthenticated(data.authenticated);
+        if (data.authenticated) void loadOrders();
+      } finally {
+        if (active) setAdminSessionChecking(false);
+      }
+    }
+
+    void checkSession();
+    return () => {
+      active = false;
+    };
+  }, [mode]);
+
+  useEffect(() => {
+    let active = true;
+
+    const freshFetch = (url: string) =>
+      fetch(url, {
+        cache: "no-store",
+        headers: { "Cache-Control": "no-cache" },
+      });
+
+    async function bootData() {
+      if (!initialData) setCatalogLoading(true);
+
+      const [productResponse, settingsResponse, zonesResponse, categoriesResponse] = await Promise.allSettled([
+        freshFetch("/api/products"),
+        freshFetch("/api/settings"),
+        freshFetch("/api/delivery-zones"),
+        freshFetch("/api/categories"),
       ]);
 
-      if (productResponse.status === "fulfilled" && productResponse.value.ok) {
-        const data = (await productResponse.value.json()) as { products: Product[]; source: "demo" | "supabase" };
-        if (data.source === "supabase") {
-          setProductSource("supabase");
-          setProducts(cleanProducts(data.products.length ? data.products : initialProducts));
+      if (!active) return;
+
+      try {
+        if (productResponse.status === "fulfilled" && productResponse.value.ok) {
+          const data = (await productResponse.value.json()) as { products: Product[]; source: "demo" | "supabase" };
+          if (!active) return;
+          if (data.source === "supabase") {
+            setProductSource("supabase");
+            setProducts(cleanProducts(data.products));
+          } else {
+            setProductSource("local");
+            setProducts(cleanProducts(readLocal(catalogStorageKey, initialProducts)));
+          }
+        } else if (!initialData) {
+          setProductSource("error");
+          setProducts([]);
         }
+      } catch {
+        if (!initialData) {
+          setProductSource("error");
+          setProducts([]);
+        }
+      } finally {
+        if (active) setCatalogLoading(false);
       }
 
       if (settingsResponse.status === "fulfilled" && settingsResponse.value.ok) {
         const data = (await settingsResponse.value.json()) as { settings: SiteSettings; source: "demo" | "supabase" };
-        const hasLocalSettings = typeof window !== "undefined" && Boolean(window.localStorage.getItem(settingsStorageKey));
-        if (data.source === "supabase" || !hasLocalSettings) {
-          setSettings(mergeSettings(data.settings));
-        }
+        if (!active) return;
+        if (data.source === "supabase" || !initialData) setSettings(mergeSettings(data.settings));
       }
-
-      if (sessionResponse.status === "fulfilled" && sessionResponse.value.ok) {
-        const data = (await sessionResponse.value.json()) as { authenticated: boolean };
-        setAdminAuthenticated(data.authenticated);
-        if (data.authenticated) void loadOrders();
-      }
-      setAdminSessionChecking(false);
 
       if (zonesResponse.status === "fulfilled" && zonesResponse.value.ok) {
         const data = (await zonesResponse.value.json()) as { zones: DeliveryZone[]; source: "demo" | "supabase" };
-        if (data.zones.length) {
+        if (!active) return;
+        if (data.source === "supabase" || data.zones.length) {
           setDeliveryZones(data.zones);
           setCustomer((current) => ({ ...current, zoneId: current.zoneId }));
         }
@@ -239,6 +291,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
 
       if (categoriesResponse.status === "fulfilled" && categoriesResponse.value.ok) {
         const data = (await categoriesResponse.value.json()) as { categories: ProductCategory[] };
+        if (!active) return;
         if (data.categories.length) {
           setProductCategories(data.categories);
           setActiveCategory((current) =>
@@ -252,14 +305,19 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
           }));
         }
       }
-
     }
 
-    void boot();
-  }, []);
+    void bootData();
+    return () => {
+      active = false;
+    };
+  }, [initialData]);
 
   async function loadOrders() {
-    const response = await fetch("/api/orders");
+    const response = await fetch("/api/orders", {
+      cache: "no-store",
+      headers: { "Cache-Control": "no-cache" },
+    });
     if (!response.ok) return;
     const data = (await response.json()) as { orders: SavedOrder[] };
     setOrders(data.orders);
@@ -782,7 +840,7 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
               Delivery de alcohol en Concepción: cervezas, piscos, vinos, destilados, promos y más para que el carrete no se acabe.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-3">
-              <Metric icon={<Beer size={20} />} label="Catálogo" value={`${visibleProductCount} productos · ${promoProductCount} promos`} />
+              <Metric icon={<Beer size={20} />} label="Catálogo" value={catalogLoading ? "Actualizando" : `${visibleProductCount} productos · ${promoProductCount} promos`} />
               <Metric
                 icon={<Bike size={20} />}
                 label="Zonas habilitadas"
@@ -813,9 +871,15 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
             </div>
           </div>
           <div className="grid min-w-0 content-start gap-4">
-            {featuredProducts.map((product) => (
-              <FeaturedProduct key={product.id} product={product} priceAdjustment={priceAdjustment} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
-            ))}
+            {catalogLoading ? (
+              <div className="min-h-[220px] rounded-lg border border-white/10 bg-white/8 p-6 text-sm font-black uppercase tracking-wide text-white/70">
+                Actualizando catálogo
+              </div>
+            ) : (
+              featuredProducts.map((product) => (
+                <FeaturedProduct key={product.id} product={product} priceAdjustment={priceAdjustment} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
+              ))
+            )}
           </div>
         </div>
       </section>
@@ -840,7 +904,11 @@ export function Storefront({ mode = "store" }: { mode?: "store" | "admin" }) {
             onPage={goToCatalogPage}
           />
           <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {paginatedProducts.length ? (
+            {catalogLoading ? (
+              <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center text-sm font-bold text-neutral-500 sm:col-span-2 xl:col-span-3">
+                Actualizando catálogo...
+              </div>
+            ) : paginatedProducts.length ? (
               paginatedProducts.map((product) => (
                 <ProductCard key={product.id} product={product} priceAdjustment={priceAdjustment} added={addedProductId === product.id} onAdd={() => addToCart(product)} />
               ))
@@ -2098,7 +2166,7 @@ function AdminPanel(props: {
   importBulkProducts: () => Promise<void>;
   adminView: AdminView;
   setAdminView: (value: AdminView) => void;
-  productSource: "local" | "supabase";
+  productSource: ProductSource;
   syncStatus: "idle" | "syncing" | "saved" | "error";
   onSaveProduct: (product: Product) => Promise<void>;
   onDeleteProduct: (productId: string) => Promise<void>;
@@ -2184,7 +2252,7 @@ function AdminPanel(props: {
               Admin
             </h2>
             <p className="mt-1 text-neutral-600">
-              Guardado: {props.productSource === "supabase" ? "Supabase" : "local demo"}
+              Guardado: {props.productSource === "supabase" ? "Supabase" : props.productSource === "loading" ? "cargando" : props.productSource === "error" ? "revisar conexión" : "local demo"}
               {props.syncStatus === "syncing" ? " (sincronizando)" : ""}
               {props.syncStatus === "saved" ? " (guardado)" : ""}
               {props.syncStatus === "error" ? " (revisar conexion)" : ""}

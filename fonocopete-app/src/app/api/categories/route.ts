@@ -3,6 +3,10 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { categories as fallbackCategories } from "@/lib/catalog";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { noStoreHeaders } from "@/lib/no-store";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const categorySchema = z.object({
   id: z.string().regex(/^[a-z0-9-]+$/).min(1),
@@ -12,7 +16,7 @@ const categorySchema = z.object({
 
 export async function GET() {
   const supabase = createServerSupabaseClient();
-  if (!supabase) return NextResponse.json({ categories: fallbackCategories, source: "demo" });
+  if (!supabase) return NextResponse.json({ categories: fallbackCategories, source: "demo" }, { headers: noStoreHeaders });
 
   const { data, error } = await supabase
     .from("categories")
@@ -29,7 +33,7 @@ export async function GET() {
       sortOrder: category.sort_order,
     })),
     source: "supabase",
-  });
+  }, { headers: noStoreHeaders });
 }
 
 export async function POST(request: Request) {

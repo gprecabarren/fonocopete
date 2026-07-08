@@ -4,6 +4,10 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { mapProductRow, mapProductToRow } from "@/lib/product-mapper";
 import type { Product } from "@/lib/types";
 import { requireAdmin } from "@/lib/auth";
+import { noStoreHeaders } from "@/lib/no-store";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const productSchema = z
   .object({
@@ -40,7 +44,7 @@ export async function GET() {
   const supabase = createServerSupabaseClient();
 
   if (!supabase) {
-    return NextResponse.json({ products: [], source: "demo" });
+    return NextResponse.json({ products: [], source: "demo" }, { headers: noStoreHeaders });
   }
 
   const { data, error } = await supabase
@@ -53,7 +57,7 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ products: data.map(mapProductRow), source: "supabase" });
+  return NextResponse.json({ products: data.map(mapProductRow), source: "supabase" }, { headers: noStoreHeaders });
 }
 
 export async function POST(request: Request) {
