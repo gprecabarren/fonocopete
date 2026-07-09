@@ -1240,7 +1240,7 @@ function Header({
     { href: "#promociones", label: "Promociones" },
     { href: "#checkout", label: "Mi pedido" },
     { href: "#faq", label: "Preguntas frecuentes" },
-    { href: "#terminos", label: "Términos" },
+    { href: "#terminos", label: "Términos y condiciones" },
   ];
 
   return (
@@ -4569,7 +4569,7 @@ function InfoSections({ settings }: { settings: SiteSettings }) {
           </div>
         </div>
         <section id="terminos" className="rounded-lg border border-neutral-200 bg-neutral-950 p-6 text-white">
-          <h2 className="mb-4 text-3xl font-black">Términos</h2>
+          <h2 className="mb-4 text-3xl font-black">Términos y condiciones</h2>
           <div className="grid gap-4 text-sm leading-7 text-neutral-300">
             <p>Venta exclusiva para mayores de 18 años. La entrega puede requerir cédula de identidad.</p>
             <p>La disponibilidad, precios y tiempos de despacho pueden variar hasta la confirmación final por WhatsApp.</p>
