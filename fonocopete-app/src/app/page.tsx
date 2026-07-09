@@ -2,6 +2,8 @@ import { Storefront } from "@/components/storefront";
 import { loadStorefrontInitialData } from "@/lib/server-storefront-data";
 import { siteUrl } from "@/lib/site";
 
+const brandAssetVersion = "20260709";
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -14,7 +16,7 @@ export default async function Home() {
     url: siteUrl,
     email: "contacto@fonocopeteconcepcion.cl",
     telephone: "+56 9 8935 1855",
-    image: `${siteUrl}/fonocopete-logo-circle.jpg`,
+    image: `${siteUrl}/fonocopete-logo-circle.png?v=${brandAssetVersion}`,
     areaServed: ["Concepción", "San Pedro de la Paz", "Talcahuano", "Coronel"],
     sameAs: [
       "https://www.instagram.com/fonocopeteconcepcion.maverik/",

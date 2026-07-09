@@ -140,14 +140,8 @@ export function Storefront({ mode = "store", initialData }: { mode?: "store" | "
   const [query, setQuery] = useState("");
   const [customer, setCustomer] = useState<CustomerDetails>(emptyCustomer);
   const [orderStatus, setOrderStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [ageConfirmed, setAgeConfirmed] = useState(() => {
-    if (typeof window === "undefined") return true;
-    return readSafeLocalStorage(ageStorageKey) === "true";
-  });
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return readSafeLocalStorage(themeStorageKey) === "dark";
-  });
+  const [ageConfirmed, setAgeConfirmed] = useState(true);
+  const [darkMode, setDarkMode] = useState(false);
   const [draft, setDraft] = useState<Product>(productDraft);
   const [bulkText, setBulkText] = useState("");
   const [adminView, setAdminView] = useState<AdminView>("orders");
@@ -176,6 +170,14 @@ export function Storefront({ mode = "store", initialData }: { mode?: "store" | "
   const [currentTime, setCurrentTime] = useState(() => new Date());
   const [couponCode, setCouponCode] = useState("");
   const [couponStatus, setCouponStatus] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setAgeConfirmed(readSafeLocalStorage(ageStorageKey) === "true");
+      setDarkMode(readSafeLocalStorage(themeStorageKey) === "dark");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (productSource === "local" && products.length) window.localStorage.setItem(catalogStorageKey, JSON.stringify(products));
@@ -1258,7 +1260,7 @@ function Header({
             {menuOpen ? <X size={21} /> : <Menu size={21} />}
           </button>
           <a href="#catalogo" className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <img src="/fonocopete-logo-circle.jpg" alt="" className="size-10 shrink-0 rounded-full border border-neutral-200 object-cover sm:size-11" />
+          <img src="/fonocopete-logo-circle.png" alt="Logo Fonocopete Concepción" className="size-10 shrink-0 rounded-full border border-neutral-200 object-cover sm:size-11" />
           <span className="min-w-0 max-w-[132px] sm:max-w-none">
             <span className="block truncate text-sm font-black uppercase leading-tight tracking-wide sm:text-lg">Fonocopete</span>
             <span className="block truncate whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.13em] text-red-600 sm:text-xs sm:tracking-[0.18em]">Botillería delivery</span>

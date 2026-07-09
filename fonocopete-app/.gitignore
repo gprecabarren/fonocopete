@@ -30,6 +30,7 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 dev-server*.log
+dev-preview*.log
 
 # local maintenance exports/backups
 product-audit-*.csv

@@ -6,6 +6,8 @@ import { createServerSupabaseClient } from "@/lib/supabase-server";
 import type { SiteSettings } from "@/lib/types";
 import "./globals.css";
 
+const brandAssetVersion = "20260709";
+
 const roboto = localFont({
   variable: "--font-roboto",
   src: [
@@ -36,6 +38,7 @@ async function getSeoSettings() {
 
 export async function generateMetadata(): Promise<Metadata> {
   const seo = await getSeoSettings();
+  const socialImageUrl = `${siteUrl}/fonocopete-og.png?v=${brandAssetVersion}`;
   const keywords = seo.keywords
     .split(",")
     .map((keyword) => keyword.trim())
@@ -44,8 +47,12 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     metadataBase: new URL(siteUrl),
     icons: {
-      icon: "/icon.png",
-      apple: "/apple-icon.png",
+      icon: [
+        { url: `/favicon.ico?v=${brandAssetVersion}`, sizes: "any" },
+        { url: `/icon.png?v=${brandAssetVersion}`, type: "image/png", sizes: "512x512" },
+      ],
+      shortcut: [`/favicon.ico?v=${brandAssetVersion}`],
+      apple: [{ url: `/apple-icon.png?v=${brandAssetVersion}`, type: "image/png", sizes: "180x180" }],
     },
     title: {
       default: seo.title,
@@ -63,10 +70,10 @@ export async function generateMetadata(): Promise<Metadata> {
       description: seo.ogDescription,
       images: [
         {
-          url: `${siteUrl}/opengraph-image?v=logo-1`,
+          url: socialImageUrl,
           width: 1200,
           height: 630,
-          alt: "Fonocopete Concepción",
+          alt: "Logo de Fonocopete Concepción, botillería delivery en Concepción",
         },
       ],
     },
@@ -74,7 +81,12 @@ export async function generateMetadata(): Promise<Metadata> {
       card: "summary_large_image",
       title: seo.twitterTitle,
       description: seo.twitterDescription,
-      images: [`${siteUrl}/opengraph-image?v=logo-1`],
+      images: [socialImageUrl],
+    },
+    appleWebApp: {
+      title: "Fonocopete Concepción",
+      capable: true,
+      statusBarStyle: "default",
     },
     category: "Botillería y delivery de bebidas",
     verification: seo.googleSiteVerification
