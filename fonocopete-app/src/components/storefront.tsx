@@ -4207,18 +4207,38 @@ function SettingsAdmin({
 
 function BackupExportPanel({ products, orders, settings }: { products: Product[]; orders: SavedOrder[]; settings: SiteSettings }) {
   const dateLabel = new Date().toISOString().slice(0, 10);
+  const priceAdjustment = getEffectivePriceAdjustment(settings, new Date());
+  const priceAdjustmentSuffix = priceAdjustment.active ? `_con_recargo_${priceAdjustment.percentage}%` : "";
 
   function exportProducts() {
+    const headers = [
+      "id",
+      "nombre",
+      "categoria_principal",
+      "segunda_categoria",
+      "precio_normal",
+      ...(priceAdjustment.active ? [`precio_normal${priceAdjustmentSuffix}`] : []),
+      "precio_original",
+      ...(priceAdjustment.active ? [`precio_original${priceAdjustmentSuffix}`] : []),
+      "tipo_cerveza",
+      "volumen",
+      "stock",
+      "destacado",
+      "imagen",
+    ];
+
     exportCsv(
       `fonocopete-productos-${dateLabel}.csv`,
-      ["id", "nombre", "categoria_principal", "segunda_categoria", "precio_normal", "precio_original", "tipo_cerveza", "volumen", "stock", "destacado", "imagen"],
+      headers,
       products.map((product) => [
         product.id,
         product.name,
         product.category,
         product.secondaryCategory || "",
         product.price,
+        ...(priceAdjustment.active ? [applyPriceAdjustment(product.price, priceAdjustment) || ""] : []),
         product.originalPrice || "",
+        ...(priceAdjustment.active ? [applyPriceAdjustment(product.originalPrice, priceAdjustment) || ""] : []),
         product.beerFormat || "",
         product.volume,
         product.stock,
