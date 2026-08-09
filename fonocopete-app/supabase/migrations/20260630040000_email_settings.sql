@@ -8,9 +8,9 @@ set value =
       '{
         "transactionalEnabled": false,
         "fromName": "Fonocopete Concepcion",
-        "fromEmail": "contacto@fonocopeteconcepcion.cl",
-        "ownerEmail": "contacto@fonocopeteconcepcion.cl",
-        "replyToEmail": "contacto@fonocopeteconcepcion.cl",
+        "fromEmail": "fonocopetepenquista@gmail.com",
+        "ownerEmail": "fonocopetepenquista@gmail.com",
+        "replyToEmail": "fonocopetepenquista@gmail.com",
         "smtpHost": "",
         "smtpPort": "587",
         "smtpUser": "",

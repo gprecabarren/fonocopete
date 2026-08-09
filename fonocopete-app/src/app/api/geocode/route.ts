@@ -17,7 +17,7 @@ export async function GET(request: Request) {
     });
     const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, {
       headers: {
-        "User-Agent": "Fonocopete-Concepcion/1.0 (fonocopeteconcepcion.maverik@gmail.com)",
+        "User-Agent": "Fonocopete-Concepcion/1.0 (fonocopetepenquista@gmail.com)",
         "Accept-Language": "es",
       },
       next: { revalidate: 86400 },

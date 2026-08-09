@@ -61,7 +61,7 @@ function createMailConfig(settings: Awaited<ReturnType<typeof loadEmailSettings>
   const email = settings.email;
   if (!email.transactionalEnabled) return null;
 
-  const contactEmail = settings.contactEmail || email.replyToEmail || "contacto@fonocopeteconcepcion.cl";
+  const contactEmail = settings.contactEmail || email.replyToEmail || "fonocopetepenquista@gmail.com";
   const smtpHost = process.env.SMTP_HOST || email.smtpHost;
   const smtpPort = Number(process.env.SMTP_PORT || email.smtpPort || 587);
   const smtpUser = process.env.SMTP_USER || email.smtpUser;

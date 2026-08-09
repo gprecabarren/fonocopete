@@ -8,7 +8,7 @@ set value =
     'contactEmail',
     case
       when coalesce(value->>'contactEmail', '') in ('', 'fonocopeteconcepcion.maverik@gmail.com')
-        then 'contacto@fonocopeteconcepcion.cl'
+        then 'fonocopetepenquista@gmail.com'
       else value->>'contactEmail'
     end,
     'newsletter',

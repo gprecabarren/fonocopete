@@ -45,6 +45,7 @@ import { categories, deliveryZones as initialDeliveryZones, initialProducts } fr
 import { findZoneByAddress, findZoneByCoordinates } from "@/lib/delivery";
 import { formatCurrency, normalizeText } from "@/lib/format";
 import { buildWhatsAppUrl, normalizeChilePhone } from "@/lib/whatsapp";
+import { trackAnalyticsEvent } from "@/lib/analytics";
 import { defaultSettings } from "@/lib/settings";
 import type {
   CartItem,
@@ -587,12 +588,27 @@ export function Storefront({ mode = "store", initialData }: { mode?: "store" | "
         const data = (await response.json()) as { orderId: string; orderNumber: string };
         saved = { id: data.orderId, orderNumber: data.orderNumber, paymentMethod };
         setRegisteredOrder(saved);
+        trackAnalyticsEvent("fonocopete_order_registered", {
+          payment_method: paymentMethod,
+          item_count: cartLines.length,
+          value: total,
+          currency: "CLP",
+          coupon_applied: Boolean(appliedCoupon && !couponError),
+          shipping_zone_selected: Boolean(selectedZone),
+        });
       } else if (!saved.paymentMethod) {
         saved = { ...saved, paymentMethod };
         setRegisteredOrder(saved);
       }
       order.orderNumber = saved.orderNumber;
       if (notifyWhatsApp) {
+        trackAnalyticsEvent("contact_whatsapp", {
+          source: "checkout",
+          payment_method: paymentMethod,
+          item_count: cartLines.length,
+          value: total,
+          currency: "CLP",
+        });
         const whatsappUrl = buildWhatsAppUrl(order, settings.whatsappNumber, purpose);
         if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
         else window.open(whatsappUrl, "_blank", "noopener,noreferrer");
@@ -4015,7 +4031,7 @@ function EmailAdmin({
         <Input
           label="Usuario SMTP"
           value={draft.email.smtpUser}
-          placeholder="contacto@fonocopeteconcepcion.cl"
+          placeholder="fonocopetepenquista@gmail.com"
           onChange={(smtpUser) => setDraft({ ...draft, email: { ...draft.email, smtpUser } })}
         />
         <p className="rounded-lg bg-white px-3 py-3 text-sm font-semibold text-neutral-600 xl:col-span-3">
@@ -4612,6 +4628,9 @@ function InfoSections({ settings }: { settings: SiteSettings }) {
             <AlertTriangle size={18} />
             Beber alcohol en exceso es dañino para la salud.
           </div>
+          <Link href="/privacidad" className="mt-5 inline-flex text-sm font-bold text-amber-100 underline underline-offset-2">
+            Privacidad y cookies
+          </Link>
         </section>
       </div>
       <div className="border-t border-neutral-200 bg-white">

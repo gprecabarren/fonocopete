@@ -22,7 +22,7 @@ update public.site_settings
 set value = value || '{
   "deliveryEnabled": true,
   "whatsappNumber": "56989351855",
-  "contactEmail": "fonocopeteconcepcion.maverik@gmail.com",
+  "contactEmail": "fonocopetepenquista@gmail.com",
   "instagramUrl": "https://www.instagram.com/fonocopeteconcepcion.maverik/",
   "facebookUrl": "https://www.instagram.com/fonocopeteconcepcion.maverik/"
 }'::jsonb,

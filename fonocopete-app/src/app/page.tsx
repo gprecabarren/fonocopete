@@ -14,7 +14,7 @@ export default async function Home() {
     "@type": "LiquorStore",
     name: "Fonocopete Concepción",
     url: siteUrl,
-    email: "contacto@fonocopeteconcepcion.cl",
+    email: "fonocopetepenquista@gmail.com",
     telephone: "+56 9 8935 1855",
     image: `${siteUrl}/fonocopete-logo-circle.png?v=${brandAssetVersion}`,
     areaServed: ["Concepción", "San Pedro de la Paz", "Talcahuano", "Coronel"],
