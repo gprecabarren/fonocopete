@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import Script from "next/script";
 import { defaultSettings } from "@/lib/settings";
 import { siteUrl } from "@/lib/site";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
@@ -7,6 +8,7 @@ import type { SiteSettings } from "@/lib/types";
 import "./globals.css";
 
 const brandAssetVersion = "20260709";
+const googleTagManagerId = "GTM-TGTQMQLV";
 
 const roboto = localFont({
   variable: "--font-roboto",
@@ -118,7 +120,22 @@ export default function RootLayout({
       lang="es"
       className={`${roboto.variable} ${montserrat.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <head>
+        <Script id="google-tag-manager" strategy="beforeInteractive">
+          {`(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);})(window,document,'script','dataLayer','${googleTagManagerId}');`}
+        </Script>
+      </head>
+      <body className="min-h-full flex flex-col">
+        <noscript>
+          <iframe
+            src={`https://www.googletagmanager.com/ns.html?id=${googleTagManagerId}`}
+            height="0"
+            width="0"
+            style={{ display: "none", visibility: "hidden" }}
+          />
+        </noscript>
+        {children}
+      </body>
     </html>
   );
 }
