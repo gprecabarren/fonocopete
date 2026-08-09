@@ -47,7 +47,7 @@ export const defaultSettings: SiteSettings = {
     twitterDescription:
       "Catálogo de licores y promociones con pedidos directos por WhatsApp en Concepción.",
     canonicalPath: "/",
-    googleSiteVerification: "2WoYdUM_a4GDlY_11GxY1MthO-dPUbENZYBQCxcunLo",
+    googleSiteVerification: "WTh3OsH9HnvMDiu5NrEJ6PvUhVnJl50EnWpsWYub6J0",
   },
   faqs: faqs.map((faq, index) => ({ id: `faq-${index + 1}`, ...faq })),
   coupons: [],
