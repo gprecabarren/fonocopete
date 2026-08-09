@@ -39,6 +39,7 @@ product-normalization-*.csv
 product-volume-*.csv
 *-backup.json
 *-export.csv
+local-maintenance-backups/
 
 # env files (can opt-in for committing if needed)
 .env*

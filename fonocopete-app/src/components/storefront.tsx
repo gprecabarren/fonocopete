@@ -1183,7 +1183,7 @@ function hasOnlyAddressCharacters(address: string) {
 }
 
 function resizeImageSource(src: string, crop: ImageCropOptions = { zoom: 1, offsetX: 0, offsetY: 0 }) {
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<Blob>((resolve, reject) => {
     const image = new Image();
     if (!src.startsWith("data:") && !src.startsWith("blob:")) image.crossOrigin = "anonymous";
     image.onload = () => {
@@ -1214,15 +1214,24 @@ function resizeImageSource(src: string, crop: ImageCropOptions = { zoom: 1, offs
       const sourceY = Math.min(maxSourceY, Math.max(0, maxSourceY / 2 + (crop.offsetY / 100) * (maxSourceY / 2)));
 
       context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, targetWidth, targetHeight);
-      try {
-        resolve(canvas.toDataURL("image/jpeg", 0.9));
-      } catch {
-        reject(new Error("La imagen no permite optimizacion"));
-      }
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("La imagen no permite optimizacion"))),
+        "image/jpeg",
+        0.9,
+      );
     };
     image.onerror = () => reject(new Error("Imagen invalida"));
     image.src = src;
   });
+}
+
+async function uploadProductImage(image: Blob) {
+  const formData = new FormData();
+  formData.set("file", image, "producto.jpg");
+  const response = await fetch("/api/product-images", { method: "POST", body: formData });
+  const payload = (await response.json()) as { imageUrl?: string; error?: string };
+  if (!response.ok || !payload.imageUrl) throw new Error(payload.error || "No se pudo subir la imagen");
+  return payload.imageUrl;
 }
 
 function Header({
@@ -3079,7 +3088,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
     let failed = 0;
     for (const product of props.products) {
       try {
-        const imageUrl = await resizeImageSource(product.imageUrl);
+        const imageUrl = await uploadProductImage(await resizeImageSource(product.imageUrl));
         const nextProduct = { ...product, imageUrl };
         props.updateProduct(product.id, () => nextProduct);
         await props.onSaveProduct(nextProduct);
@@ -3152,7 +3161,7 @@ function CatalogAdmin(props: Parameters<typeof AdminPanel>[0] & { updateProduct:
                 <SegmentButton active={imageMode === "url"} onClick={() => setImageMode("url")}>Foto URL</SegmentButton>
               </div>
               {imageMode === "upload" ? (
-                <ImagePicker label="Subir imagen" onImage={(imageUrl) => props.setDraft({ ...props.draft, imageUrl })} />
+                <ImagePicker label="Subir imagen" onImage={async (image) => props.setDraft({ ...props.draft, imageUrl: await uploadProductImage(image) })} />
               ) : (
                 <Input label="Foto URL" value={props.draft.imageUrl} onChange={(value) => props.setDraft({ ...props.draft, imageUrl: value })} />
               )}
@@ -3387,7 +3396,8 @@ function ProductAdminCard({
           <input value={product.name} onChange={(event) => update({ ...product, name: event.target.value })} className="w-full min-w-0 rounded-md border border-neutral-300 px-3 py-2 font-normal" />
           <ImagePicker
             label="Subir imagen"
-            onImage={(imageUrl) => {
+            onImage={async (image) => {
+              const imageUrl = await uploadProductImage(image);
               const nextProduct = { ...product, imageUrl };
               update(nextProduct);
               void onSaveProduct(nextProduct);
@@ -4825,7 +4835,7 @@ function Textarea(props: { label: string; value: string; onChange: (value: strin
   );
 }
 
-function ImagePicker({ label, onImage }: { label: string; onImage: (imageUrl: string) => void }) {
+function ImagePicker({ label, onImage }: { label: string; onImage: (image: Blob) => Promise<void> }) {
   const [status, setStatus] = useState("");
   const [cropSource, setCropSource] = useState<string | null>(null);
 
@@ -4845,8 +4855,8 @@ function ImagePicker({ label, onImage }: { label: string; onImage: (imageUrl: st
     if (!cropSource) return;
     setStatus("Procesando imagen...");
     try {
-      const imageUrl = await resizeImageSource(cropSource, crop);
-      onImage(imageUrl);
+      const image = await resizeImageSource(cropSource, crop);
+      await onImage(image);
       setStatus("Imagen cargada y ajustada a 1200 x 900 px");
       closeCropEditor();
     } catch {
