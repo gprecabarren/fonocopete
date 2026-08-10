@@ -3862,7 +3862,6 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
       ...zone,
       id: zone.id || crypto.randomUUID(),
       name,
-      description: "",
       // For new zones, use the name as the automatic address match without exposing technical fields.
       matchTerms: zone.matchTerms.length ? zone.matchTerms : [name],
     };
