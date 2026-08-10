@@ -3826,7 +3826,7 @@ function CategoriesAdmin({
 }
 
 function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zones: DeliveryZone[]) => void }) {
-  const emptyZone: DeliveryZone = {
+  const createEmptyZone = (): DeliveryZone => ({
     id: "",
     name: "",
     price: 0,
@@ -3835,25 +3835,67 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
     polygon: [],
     matchTerms: [],
     active: true,
-  };
-  const [draft, setDraft] = useState(emptyZone);
+  });
+  const [draft, setDraft] = useState<DeliveryZone | null>(null);
   const [status, setStatus] = useState("");
+  const [editorError, setEditorError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function openCreate() {
+    setDraft(createEmptyZone());
+    setEditorError("");
+  }
+
+  function openEdit(zone: DeliveryZone) {
+    setDraft({ ...zone });
+    setEditorError("");
+  }
 
   async function saveZone(zone: DeliveryZone) {
-    setStatus("Guardando zona...");
-    const response = await fetch("/api/delivery-zones", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(zone),
-    });
-    if (!response.ok) {
-      setStatus("No se pudo guardar la zona.");
+    const name = zone.name.trim();
+    if (!name) {
+      setEditorError("Escribe el nombre de la zona.");
       return;
     }
-    const data = (await response.json()) as { zone: DeliveryZone };
-    setZones([data.zone, ...zones.filter((item) => item.id !== data.zone.id)]);
-    setDraft(emptyZone);
-    setStatus("Zona guardada.");
+
+    const zoneToSave: DeliveryZone = {
+      ...zone,
+      id: zone.id || crypto.randomUUID(),
+      name,
+      description: "",
+      // For new zones, use the name as the automatic address match without exposing technical fields.
+      matchTerms: zone.matchTerms.length ? zone.matchTerms : [name],
+    };
+
+    setStatus("Guardando zona...");
+    setEditorError("");
+    setSaving(true);
+
+    try {
+      const response = await fetch("/api/delivery-zones", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(zoneToSave),
+      });
+      const data = (await response.json().catch(() => null)) as { zone?: DeliveryZone; error?: string } | null;
+      if (!response.ok || !data?.zone) {
+        const message = response.status === 401
+          ? "Tu sesión administrativa venció. Inicia sesión nuevamente para guardar."
+          : data?.error || "No se pudo guardar la zona. Inténtalo nuevamente.";
+        setEditorError(message);
+        setStatus("");
+        return;
+      }
+
+      setZones([data.zone, ...zones.filter((item) => item.id !== data.zone?.id)]);
+      setDraft(null);
+      setStatus(zone.id ? "Zona actualizada." : "Zona creada.");
+    } catch {
+      setEditorError("No se pudo conectar para guardar la zona. Revisa tu conexión e inténtalo nuevamente.");
+      setStatus("");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function deleteZone(id: string) {
@@ -3865,32 +3907,21 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!draft.name.trim() || !draft.matchTerms.length) return;
-          void saveZone({ ...draft, id: draft.id || crypto.randomUUID() });
-        }}
-        className="h-fit rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4"
-      >
-        <h3 className="mb-4 flex items-center gap-2 text-lg font-black"><MapPin size={18} /> Nueva zona</h3>
-        <div className="grid gap-3">
-          <Input label="Nombre" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
-          <Input label="Precio despacho" type="number" value={String(draft.price)} onChange={(value) => setDraft({ ...draft, price: value === "" ? 0 : Number(value) })} />
-          <Input label="Tiempo estimado" value={draft.eta} onChange={(eta) => setDraft({ ...draft, eta })} />
-          <Input
-            label="Comunas o palabras para detectar"
-            value={draft.matchTerms.join(", ")}
-            onChange={(value) => setDraft({ ...draft, matchTerms: value.split(",").map((term) => term.trim()).filter(Boolean) })}
-          />
-          <Textarea label="Descripción" value={draft.description} onChange={(description) => setDraft({ ...draft, description })} />
-          <button className="action-button flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 text-sm font-black text-white">
-            <Save size={18} /> Guardar zona
-          </button>
-          {status ? <p className="text-sm font-bold text-neutral-600">{status}</p> : null}
+    <div className="grid gap-4">
+      <section className="flex flex-col gap-4 rounded-lg border border-neutral-200 bg-[#f7f4ef] p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="flex items-center gap-2 text-lg font-black"><MapPin size={18} /> Zonas de despacho</h3>
+          <p className="mt-1 text-sm font-semibold text-neutral-600">Crea y ajusta las zonas que verán tus clientes al completar el pedido.</p>
         </div>
-      </form>
+        <button
+          type="button"
+          onClick={openCreate}
+          className="action-button inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-neutral-950 px-4 text-sm font-black text-white"
+        >
+          <Plus size={18} /> Añadir nueva zona
+        </button>
+      </section>
+      {status ? <p className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm font-bold text-green-800">{status}</p> : null}
       <div className="grid gap-3">
         {zones.map((zone) => (
           <div key={zone.id} className="grid gap-3 rounded-lg border border-neutral-200 bg-white p-4 md:grid-cols-[minmax(0,1fr)_140px]">
@@ -3901,8 +3932,6 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
                   {zone.active ? "Activa" : "Oculta"}
                 </span>
               </div>
-              <p className="mt-1 text-sm text-neutral-600">{zone.description}</p>
-              <p className="mt-2 text-sm font-bold">{zone.matchTerms.join(", ")}</p>
               <p className="mt-2 font-black text-red-600">{formatCurrency(zone.price)} · {zone.eta}</p>
             </div>
             <div className="grid content-start gap-2">
@@ -3915,7 +3944,7 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
               </button>
               <button
                 type="button"
-                onClick={() => setDraft(zone)}
+                onClick={() => openEdit(zone)}
                 className="action-button h-10 rounded-lg bg-neutral-950 text-sm font-black text-white"
               >
                 Editar
@@ -3930,7 +3959,66 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
             </div>
           </div>
         ))}
+        {!zones.length ? (
+          <div className="rounded-lg border border-dashed border-neutral-300 bg-white p-8 text-center text-sm font-bold text-neutral-500">
+            Aún no hay zonas creadas. Añade la primera para comenzar.
+          </div>
+        ) : null}
       </div>
+      {draft ? (
+        <div className="fixed inset-0 z-[80] grid place-items-center overflow-y-auto bg-neutral-950/80 px-4 py-6 backdrop-blur">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveZone(draft);
+            }}
+            className="w-full max-w-lg rounded-lg bg-white p-5 shadow-2xl"
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-xl font-black">{draft.id ? "Editar zona" : "Añadir nueva zona"}</h3>
+                <p className="mt-1 text-sm font-semibold text-neutral-600">Define el nombre, el costo y el tiempo estimado del despacho.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setDraft(null); setEditorError(""); }}
+                className="action-button grid size-10 shrink-0 place-items-center rounded-lg border border-neutral-300 text-neutral-700"
+                aria-label="Cerrar"
+                title="Cerrar"
+              >
+                <X size={19} />
+              </button>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <Input label="Nombre de la zona" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} required />
+              </div>
+              <Input label="Precio de despacho" type="number" inputMode="numeric" value={String(draft.price)} onChange={(value) => setDraft({ ...draft, price: value === "" ? 0 : Number(value) })} required />
+              <Input label="Tiempo estimado" value={draft.eta} onChange={(eta) => setDraft({ ...draft, eta })} required />
+              <label className="grid gap-1 text-sm font-bold sm:col-span-2">
+                Estado de la zona
+                <select
+                  value={draft.active ? "active" : "hidden"}
+                  onChange={(event) => setDraft({ ...draft, active: event.target.value === "active" })}
+                  className={`h-10 rounded-lg border px-3 font-bold ${draft.active ? "border-green-200 bg-green-50 text-green-800" : "border-neutral-300 bg-neutral-100 text-neutral-600"}`}
+                >
+                  <option value="active">Activa</option>
+                  <option value="hidden">Oculta</option>
+                </select>
+              </label>
+            </div>
+            {editorError ? <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">{editorError}</p> : null}
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => { setDraft(null); setEditorError(""); }} className="action-button h-11 rounded-lg border border-neutral-300 px-4 text-sm font-black text-neutral-700">
+                Cancelar
+              </button>
+              <button disabled={saving} className="action-button inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-neutral-950 px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60">
+                <Save size={18} /> {saving ? "Guardando..." : draft.id ? "Guardar cambios" : "Crear zona"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
     </div>
   );
 }

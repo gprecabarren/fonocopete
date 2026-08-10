@@ -13,9 +13,9 @@ const zoneSchema = z.object({
   name: z.string().min(1),
   price: z.number().int().nonnegative(),
   eta: z.string().min(1),
-  description: z.string(),
-  polygon: z.array(z.object({ lat: z.number(), lng: z.number() })),
-  matchTerms: z.array(z.string().min(1)).min(1),
+  description: z.string().optional().default(""),
+  polygon: z.array(z.object({ lat: z.number(), lng: z.number() })).optional().default([]),
+  matchTerms: z.array(z.string().min(1)).optional().default([]),
   active: z.boolean(),
 });
 
