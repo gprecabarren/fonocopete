@@ -12,7 +12,7 @@ const zoneSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   price: z.number().int().nonnegative(),
-  eta: z.string().min(1),
+  eta: z.string().optional().default(""),
   description: z.string().optional().default(""),
   polygon: z.array(z.object({ lat: z.number(), lng: z.number() })).optional().default([]),
   matchTerms: z.array(z.string().min(1)).optional().default([]),

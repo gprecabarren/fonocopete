@@ -3830,7 +3830,7 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
     id: "",
     name: "",
     price: 0,
-    eta: "30-60 min",
+    eta: "",
     description: "",
     polygon: [],
     matchTerms: [],
@@ -3931,7 +3931,7 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
                   {zone.active ? "Activa" : "Oculta"}
                 </span>
               </div>
-              <p className="mt-2 font-black text-red-600">{formatCurrency(zone.price)} · {zone.eta}</p>
+              <p className="mt-2 font-black text-red-600">{formatCurrency(zone.price)}{zone.eta ? ` · ${zone.eta}` : ""}</p>
             </div>
             <div className="grid content-start gap-2">
               <button
@@ -3976,7 +3976,7 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
                 <h3 className="text-xl font-black">{draft.id ? "Editar zona" : "Añadir nueva zona"}</h3>
-                <p className="mt-1 text-sm font-semibold text-neutral-600">Define el nombre, el costo y el tiempo estimado del despacho.</p>
+                <p className="mt-1 text-sm font-semibold text-neutral-600">Define el nombre, el costo y el estado de la zona.</p>
               </div>
               <button
                 type="button"
@@ -3988,13 +3988,10 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
                 <X size={19} />
               </button>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <Input label="Nombre de la zona" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} required />
-              </div>
+            <div className="grid gap-3">
+              <Input label="Nombre de la zona" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} required />
               <Input label="Precio de despacho" type="number" inputMode="numeric" value={String(draft.price)} onChange={(value) => setDraft({ ...draft, price: value === "" ? 0 : Number(value) })} required />
-              <Input label="Tiempo estimado" value={draft.eta} onChange={(eta) => setDraft({ ...draft, eta })} required />
-              <label className="grid gap-1 text-sm font-bold sm:col-span-2">
+              <label className="grid gap-1 text-sm font-bold">
                 Estado de la zona
                 <select
                   value={draft.active ? "active" : "hidden"}
@@ -5148,9 +5145,9 @@ function OrderTotals({
         <span>Delivery</span>
         <span>{deliveryEnabled ? formatCurrency(delivery) : "Sin cobro"}</span>
       </div>
-      <div className="mt-2 flex items-center justify-between text-xs font-black uppercase tracking-wide text-neutral-500">
+      <div className={`mt-2 flex items-center text-xs font-black uppercase tracking-wide text-neutral-500 ${zone.eta ? "justify-between" : "justify-start"}`}>
         <span>{zone.name}</span>
-        <span>{deliveryEnabled ? zone.eta : "Sin cobro"}</span>
+        {deliveryEnabled && zone.eta ? <span>{zone.eta}</span> : null}
       </div>
       <div className="mt-3 flex items-center justify-between border-t border-neutral-300 pt-3 text-xl font-black">
         <span>Total</span>
