@@ -333,7 +333,7 @@ export function Storefront({ mode = "store", initialData }: { mode?: "store" | "
     ? activeCategory
     : productCategories[0]?.id || "promociones";
   const selectedZone = activeZones.find((zone) => zone.id === customer.zoneId);
-  const activeZone = selectedZone ?? { ...initialDeliveryZones[0], id: "", name: "Selecciona zona", price: 0, eta: "" };
+  const activeZone = selectedZone ?? { ...initialDeliveryZones[0], id: "", name: "Selecciona zona", price: 0 };
   const priceAdjustment = getEffectivePriceAdjustment(settings, currentTime);
   const filteredProducts = useMemo(() => {
     const cleanQuery = normalizeText(query);
@@ -1711,7 +1711,7 @@ function CheckoutPanel(props: {
   cartLines: Array<CartItem & { product: Product; unitPrice: number; lineTotal: number }>;
   cartCount: number;
   customer: CustomerDetails;
-  activeZone: { id: string; name: string; price: number; eta: string };
+  activeZone: { id: string; name: string; price: number };
   subtotal: number;
   discount: number;
   couponCode: string;
@@ -3830,7 +3830,6 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
     id: "",
     name: "",
     price: 0,
-    eta: "",
     description: "",
     polygon: [],
     matchTerms: [],
@@ -3931,7 +3930,7 @@ function ZonesAdmin({ zones, setZones }: { zones: DeliveryZone[]; setZones: (zon
                   {zone.active ? "Activa" : "Oculta"}
                 </span>
               </div>
-              <p className="mt-2 font-black text-red-600">{formatCurrency(zone.price)}{zone.eta ? ` · ${zone.eta}` : ""}</p>
+              <p className="mt-2 font-black text-red-600">{formatCurrency(zone.price)}</p>
             </div>
             <div className="grid content-start gap-2">
               <button
@@ -5124,7 +5123,7 @@ function OrderTotals({
   discount: number;
   delivery: number;
   total: number;
-  zone: { name: string; eta: string };
+  zone: { name: string };
   deliveryEnabled: boolean;
   minimumOrderAmount: number;
 }) {
@@ -5145,9 +5144,8 @@ function OrderTotals({
         <span>Delivery</span>
         <span>{deliveryEnabled ? formatCurrency(delivery) : "Sin cobro"}</span>
       </div>
-      <div className={`mt-2 flex items-center text-xs font-black uppercase tracking-wide text-neutral-500 ${zone.eta ? "justify-between" : "justify-start"}`}>
+      <div className="mt-2 flex items-center text-xs font-black uppercase tracking-wide text-neutral-500">
         <span>{zone.name}</span>
-        {deliveryEnabled && zone.eta ? <span>{zone.eta}</span> : null}
       </div>
       <div className="mt-3 flex items-center justify-between border-t border-neutral-300 pt-3 text-xl font-black">
         <span>Total</span>

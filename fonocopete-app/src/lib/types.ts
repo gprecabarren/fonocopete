@@ -24,7 +24,6 @@ export type DeliveryZone = {
   id: string;
   name: string;
   price: number;
-  eta: string;
   description: string;
   polygon: Array<{ lat: number; lng: number }>;
   matchTerms: string[];

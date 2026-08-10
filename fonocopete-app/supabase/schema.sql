@@ -24,7 +24,6 @@ create table if not exists public.delivery_zones (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   price integer not null check (price >= 0),
-  eta text not null,
   description text,
   polygon jsonb not null default '[]'::jsonb,
   match_terms text[] not null default '{}',

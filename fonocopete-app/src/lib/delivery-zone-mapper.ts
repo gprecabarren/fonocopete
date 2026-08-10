@@ -4,7 +4,6 @@ type DeliveryZoneRow = {
   id: string;
   name: string;
   price: number;
-  eta: string;
   description: string | null;
   polygon: Array<{ lat: number; lng: number }> | null;
   match_terms: string[] | null;
@@ -16,7 +15,6 @@ export function mapDeliveryZoneRow(row: DeliveryZoneRow): DeliveryZone {
     id: row.id,
     name: row.name,
     price: row.price,
-    eta: row.eta,
     description: row.description || "",
     polygon: row.polygon || [],
     matchTerms: row.match_terms || [],
@@ -29,7 +27,6 @@ export function mapDeliveryZoneToRow(zone: DeliveryZone) {
     id: zone.id,
     name: zone.name,
     price: zone.price,
-    eta: zone.eta,
     description: zone.description,
     polygon: zone.polygon,
     match_terms: zone.matchTerms,
