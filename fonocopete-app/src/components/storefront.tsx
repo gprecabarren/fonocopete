@@ -1365,7 +1365,7 @@ function GooglePreferredSourceLink({
   placement: "header" | "footer";
 }) {
   const isHeader = placement === "header";
-  const label = "Haz de Fonocopete tu fuente preferida en Google";
+  const label = "Preferir Fonocopete";
 
   return (
     <a
