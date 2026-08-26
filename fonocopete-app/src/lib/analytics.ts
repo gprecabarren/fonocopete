@@ -7,7 +7,8 @@ type AnalyticsEventName =
   | "fonocopete_review_submitted"
   | "contact_whatsapp"
   | "contact_telegram"
-  | "contact_call";
+  | "contact_call"
+  | "google_preferred_source_click";
 
 type AnalyticsValue = string | number | boolean;
 

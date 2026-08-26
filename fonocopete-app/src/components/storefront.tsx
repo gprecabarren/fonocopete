@@ -18,6 +18,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  ExternalLink,
   LogIn,
   LogOut,
   MapPin,
@@ -40,6 +41,7 @@ import {
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { FaFacebookF, FaInstagram, FaWhatsapp } from "react-icons/fa";
+import { FcGoogle } from "react-icons/fc";
 import { SiGooglemaps, SiMercadopago, SiUbereats, SiWaze } from "react-icons/si";
 import { categories, deliveryZones as initialDeliveryZones, initialProducts } from "@/lib/catalog";
 import { findZoneByAddress, findZoneByCoordinates } from "@/lib/delivery";
@@ -67,6 +69,7 @@ const catalogStorageKey = "fonocopete.catalog";
 const settingsStorageKey = "fonocopete.settings";
 const ageStorageKey = "fonocopete.age-ok";
 const themeStorageKey = "fonocopete.theme";
+const googlePreferredSourceUrl = "https://www.google.com/preferences/source?q=fonocopeteconcepcion.cl";
 const productsPerCatalogPage = 15;
 const productsPerAdminPage = 20;
 type AdminView = "orders" | "catalog" | "categories" | "zones" | "coupons" | "settings" | "seo" | "faqs" | "emails" | "analytics";
@@ -1336,8 +1339,11 @@ function Header({
     </header>
     <div className="mt-16 border-t border-neutral-200/70 bg-white/80">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2 sm:px-6">
-        <span className="text-xs font-black uppercase text-neutral-500">Encuéntranos</span>
-        <SocialLinks settings={settings} className="flex" />
+        <span className="hidden text-xs font-black uppercase text-neutral-500 sm:inline">Encuéntranos</span>
+        <div className="ml-auto flex min-w-0 items-center gap-1.5">
+          <GooglePreferredSourceLink placement="header" compact />
+          <SocialLinks settings={settings} className="flex" />
+        </div>
       </div>
     </div>
     </>
@@ -1353,6 +1359,45 @@ function SocialLinks({ settings, className = "" }: { settings: SiteSettings; cla
       <SocialIcon href={`mailto:${settings.contactEmail}`} label="Correo" hoverClass="hover:border-amber-500 hover:text-amber-600 active:border-amber-500 active:text-amber-600"><Mail size={18} /></SocialIcon>
       <SocialIcon href={whatsappUrl} label="WhatsApp" hoverClass="hover:border-green-500 hover:text-green-600 active:border-green-500 active:text-green-600"><FaWhatsapp size={19} /></SocialIcon>
     </div>
+  );
+}
+
+function GooglePreferredSourceLink({
+  placement,
+  compact = false,
+}: {
+  placement: "header" | "footer";
+  compact?: boolean;
+}) {
+  const label = compact
+    ? "Preferir en Google"
+    : "Haz de Fonocopete tu fuente preferida en Google";
+
+  return (
+    <a
+      href={googlePreferredSourceUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Añadir Fonocopete Concepción como fuente preferida en Google"
+      title="Añadir como fuente preferida en Google"
+      onClick={() => trackAnalyticsEvent("google_preferred_source_click", { source: placement })}
+      className={`action-button group relative inline-flex shrink-0 items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300 bg-white text-neutral-800 hover:border-[#4285f4] hover:bg-[#f8fbff] focus-visible:border-[#4285f4] active:border-[#34a853] active:bg-[#f4fbf6] ${
+        compact ? "size-10 px-0 md:h-10 md:w-auto md:px-3" : "min-h-12 w-full max-w-md px-4 py-3"
+      }`}
+    >
+      <FcGoogle aria-hidden="true" className={compact ? "text-[19px]" : "text-2xl"} />
+      <span className={`${compact ? "hidden md:inline" : "text-sm"} font-black`}>{label}</span>
+      {!compact ? <ExternalLink aria-hidden="true" size={16} className="shrink-0 text-neutral-500" /> : null}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 grid h-1 origin-bottom grid-cols-4 scale-y-0 opacity-0 transition duration-200 group-hover:scale-y-100 group-hover:opacity-100 group-focus-visible:scale-y-100 group-focus-visible:opacity-100 group-active:scale-y-100 group-active:opacity-100"
+      >
+        <span className="bg-[#4285f4]" />
+        <span className="bg-[#ea4335]" />
+        <span className="bg-[#fbbc05]" />
+        <span className="bg-[#34a853]" />
+      </span>
+    </a>
   );
 }
 
@@ -4717,9 +4762,12 @@ function InfoSections({ settings }: { settings: SiteSettings }) {
         </section>
       </div>
       <div className="border-t border-neutral-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-6 sm:px-6">
-          <SocialLinks settings={settings} className="flex" />
-          <a href="https://www.minsal.cl/" target="_blank" rel="noreferrer" className="w-fit opacity-45 transition hover:opacity-75">
+        <div className="mx-auto grid max-w-7xl grid-cols-[1fr_auto] items-center gap-4 px-4 py-6 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:px-6">
+          <SocialLinks settings={settings} className="flex sm:col-start-1 sm:row-start-1" />
+          <div className="col-span-2 row-start-1 flex justify-center sm:col-span-1 sm:col-start-2">
+            <GooglePreferredSourceLink placement="footer" />
+          </div>
+          <a href="https://www.minsal.cl/" target="_blank" rel="noreferrer" className="col-start-2 row-start-2 w-fit justify-self-end opacity-45 transition hover:opacity-75 sm:col-start-3 sm:row-start-1">
             <img src="/minsal-logo.png" alt="Ministerio de Salud de Chile" className="h-12 w-12 object-contain" />
           </a>
         </div>
