@@ -1338,9 +1338,9 @@ function Header({
       ) : null}
     </header>
     <div className="mt-16 border-t border-neutral-200/70 bg-white/80">
-      <div className="mx-auto flex max-w-7xl flex-col items-start gap-2 px-4 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:px-6">
         <GooglePreferredSourceLink placement="header" />
-        <SocialLinks settings={settings} className="flex self-end sm:self-auto" />
+        <SocialLinks settings={settings} className="flex shrink-0" />
       </div>
     </div>
     </>
@@ -1376,11 +1376,13 @@ function GooglePreferredSourceLink({
       title="Añadir como fuente preferida en Google"
       onClick={() => trackAnalyticsEvent("google_preferred_source_click", { source: placement })}
       className={`action-button group relative inline-flex shrink-0 items-center justify-center gap-2 overflow-hidden rounded-lg border border-neutral-300 bg-white text-neutral-800 hover:border-[#4285f4] hover:bg-[#f8fbff] focus-visible:border-[#4285f4] active:border-[#34a853] active:bg-[#f4fbf6] ${
-        isHeader ? "min-h-10 w-full max-w-full justify-start px-3 sm:w-auto" : "min-h-12 w-full max-w-md px-4 py-3"
+        isHeader ? "min-h-10 min-w-0 justify-start px-2.5 sm:px-3" : "min-h-12 w-full max-w-md px-4 py-3"
       }`}
     >
       <FcGoogle aria-hidden="true" className={isHeader ? "text-[19px]" : "text-2xl"} />
-      <span className={`${isHeader ? "text-xs sm:text-sm" : "text-sm"} text-left font-black`}>{label}</span>
+      <span className={`${isHeader ? "text-[11px] sm:text-sm" : "text-sm"} text-left font-black`}>
+        {isHeader ? <><span className="sm:hidden">Preferir</span><span className="hidden sm:inline">{label}</span></> : label}
+      </span>
       {!isHeader ? <ExternalLink aria-hidden="true" size={16} className="shrink-0 text-neutral-500" /> : null}
       <span
         aria-hidden="true"
